@@ -15,7 +15,7 @@
   </div>
 
   <!-- Galería de imágenes -->
-  <div class="service-gallery">
+  <div *ngIf="service.images.length > 0" class="service-gallery">
     <h2 class="gallery-title">Galería del Producto</h2>
     <div class="gallery-grid">
       <div *ngFor="let image of service.images" class="gallery-item">
@@ -42,11 +42,11 @@
     <!-- Panel lateral de contacto/resumen -->
     <div class="service-sidebar">
       <div class="summary-card">
-        <div class="price-section">
+        <!-- <div class="price-section">
           <span class="original-price" *ngIf="service.discount">{{ service.price | currency }}</span>
           <span class="current-price">{{ service.discountPrice | currency }}</span>
           <span class="discount-badge" *ngIf="service.discount">{{ service.discount }}% OFF</span>
-        </div>
+        </div> -->
         
         <div class="delivery-info">
           <i class="fas fa-shipping-fast"></i>
@@ -55,8 +55,7 @@
         
         <div class="stock-info">
           <i class="fas fa-box-open"></i>
-          <span *ngIf="service.stock > 0" class="in-stock">Disponible ({{ service.stock }} unidades)</span>
-          <span *ngIf="service.stock <= 0" class="out-of-stock">Agotado temporalmente</span>
+          <span  class="in-stock">Disponible</span>
         </div>
         
         <div class="action-buttons">
@@ -79,37 +78,13 @@
           </div>
         </div>
         
-        <div class="contact-options">
-          <button class="btn-contact">
-            <i class="fas fa-envelope ico"></i> Enviar mensaje
-          </button>
-          <button class="btn-contact">
-            <i class="fas fa-phone-alt"></i> Llamar al vendedor
-          </button>
-        </div>
+    
       </div>
     </div>
   </div>
 
   <!-- Reseñas de clientes -->
-  <div class="service-reviews">
-    <h2>Reseñas de clientes</h2>
-    <div class="review-cards">
-      <div *ngFor="let review of service.reviewsList" class="review-card">
-        <div class="review-header">
-          <img [src]="review.user.avatar" alt="Usuario" class="review-avatar" loading="lazy">
-          <div>
-            <h3>{{ review.user.name }}</h3>
-            <div class="review-rating">
-              <i class="fas fa-star" *ngFor="let star of review.starsArray"></i>
-            </div>
-          </div>
-        </div>
-        <p class="review-content">{{ review.content }}</p>
-        <span class="review-date">{{ review.date | date }}</span>
-      </div>
-    </div>
-  </div>
+
 </div>
 
 <!-- Lightbox para imágenes -->

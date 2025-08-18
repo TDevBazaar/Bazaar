@@ -9,4 +9,10 @@ import { Component } from '@angular/core';
 })
 export class PrecioComponent {
 
+  numero:string='+5352529615';
+  mensaje:string='Me interesan tus servicios'
+  enviarWhatsApp() {
+    const url = `https://wa.me/${this.numero}?text=${encodeURIComponent(this.mensaje)}`;
+    window.open(url, '_blank');
+  }
 }

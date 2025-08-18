@@ -1,4 +1,5 @@
 import { Component } from '@angular/core';
+import { Constants } from '../../../Core/Constant/Constant';
 
 @Component({
   selector: 'app-hero',
@@ -8,6 +9,9 @@ import { Component } from '@angular/core';
   styleUrl: './hero.component.css'
 })
 export class HeroComponent {
+  
+  // Enlaces de redes sociales
+  socialMedia = Constants.SOCIAL_MEDIA;
   imagenURL = 'assets/images/test1.png';
   imagenURL1 = 'assets/images/test1.png';
   imagenURL2 = 'assets/images/test2.png';

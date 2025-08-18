@@ -6,11 +6,13 @@ import { TicketService } from '../../../Core/Services/ticket.service';
 import { NgFor, NgIf } from '@angular/common';
 import { EcommercedetailComponent } from "../ecommercedetail/ecommercedetail.component";
 import { Constants } from '../../../Core/Constant/Constant';
+import { AlertService } from '../../../Core/Services/alert.service';
+import { AlertContainerComponent } from '../../../Shared/Components/alert-container/alert-container.component';
 
 @Component({
   selector: 'app-informacion',
   standalone: true,
-  imports: [ReactiveFormsModule, NgIf, NgFor, EcommercedetailComponent],
+  imports: [ReactiveFormsModule, NgIf, NgFor, EcommercedetailComponent, AlertContainerComponent],
   templateUrl: './informacion.component.html',
   styleUrl: './informacion.component.css'
 })
@@ -23,7 +25,13 @@ export class InformacionComponent implements OnInit{
   allowedFileTypes = ['image/jpeg', 'image/png'];
   datos: any;
 
-constructor(private fb: FormBuilder, private ticketService:TicketService, private route: ActivatedRoute,private router:Router) {
+constructor(
+    private fb: FormBuilder, 
+    private ticketService: TicketService, 
+    private route: ActivatedRoute,
+    private router: Router,
+    private alertService: AlertService
+  ) {
  this.ticketForm = this.fb.group({
       titulo: ['', [
         Validators.required,
@@ -139,15 +147,28 @@ scrollToTop(): void {
       this.ticketService.createTicket(formData).subscribe({
         next: (response: any) => {
           this.resetForm();
+          this.alertService.showSuccess(
+            'Tu ticket ha sido creado exitosamente. Nos pondremos en contacto contigo pronto.',
+            '¡Ticket Creado!'
+          );
         },
         error: (err: any) => {
+          console.error('Error al crear ticket:', err);
+          this.alertService.showError(
+            'Ha ocurrido un error al crear el ticket. Por favor, intenta nuevamente.',
+            'Error al Crear Ticket'
+          );
         }
       });
     } else {
       // Marcar todos los campos como tocados para mostrar errores
       this.markFormGroupTouched(this.ticketForm);
       
-      
+      // Mostrar alerta de validación
+      this.alertService.showWarning(
+        'Por favor, completa todos los campos requeridos correctamente.',
+        'Formulario Incompleto'
+      );
     }
   }
 
@@ -166,9 +187,6 @@ scrollToTop(): void {
     });
   }
 navegar(){
-  this.router.navigateByUrl('/login', { skipLocationChange: true }).then(() => {
-  this.router.navigate(['tu-ruta']);
-});
-
+  this.router.navigate(['/']);
 }
 }

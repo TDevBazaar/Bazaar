@@ -1,5 +1,6 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { Constants } from '../../../Core/Constant/Constant';
 import { HeroComponent } from "../hero/hero.component";
 import { SkillsComponent } from "../skills/skills.component";
 import { ScrollComponent } from "../scroll/scroll.component";
@@ -15,11 +16,13 @@ import { ProyectoshComponent } from "../proyectosh/proyectosh.component";
 import { CarouselComponent } from "../../../Shared/ReusableComponents/carousel/carousel.component";
 import { Platform } from '@angular/cdk/platform';
 import { ServicesallComponent } from "../servicesall/servicesall.component";
+import { AdsComponent } from "../../../Shared/Components/ads/ads.component";
+import { SeoService } from '../../../Core/Services/seo.service';
 
 @Component({
   selector: 'app-landing-page',
   standalone: true,
-  imports: [RouterLink, CommonModule, HeroComponent, VentajasComponent, PrecioComponent, AplicationComponent, ProyectosComponent, ContactoComponent, TopComponent, ProyectoshComponent, CarouselComponent, ServicesallComponent],
+  imports: [RouterLink, CommonModule, HeroComponent, VentajasComponent, PrecioComponent, AplicationComponent, ProyectosComponent, ContactoComponent, TopComponent, ProyectoshComponent, CarouselComponent, ServicesallComponent, AdsComponent],
   templateUrl: './landing-page.component.html',
   styleUrl: './landing-page.component.css'
 })
@@ -27,7 +30,10 @@ export class LandingPageComponent implements OnInit{
    
   expression=false;
   isAndroid:boolean=false;
- constructor(public platform: Platform) {
+  
+  // Enlaces de redes sociales
+  socialMedia = Constants.SOCIAL_MEDIA;
+ constructor(public platform: Platform, private seoService: SeoService) {
   }
   
   //   abrir():void {
@@ -40,6 +46,15 @@ export class LandingPageComponent implements OnInit{
 
    ngOnInit(): void {
      this.isAndroid=this.platform.ANDROID;
+     
+     // Configurar SEO para la página principal
+     this.seoService.setPageSEO({
+       title: 'DevBazaar - Soluciones Digitales y Desarrollo Web Profesional',
+       description: 'Expertos en desarrollo web, e-commerce, catálogos digitales y sistemas de reservación. Soluciones tecnológicas innovadoras para impulsar tu negocio online.',
+       keywords: 'desarrollo web, e-commerce, tienda online, catálogo digital, sistema de reservación, programación, diseño web, soluciones digitales, tecnología, Cuba',
+       image: 'https://tdevbazaar.github.io/Bazaar/assets/img/og-image.jpg',
+       url: 'https://tdevbazaar.github.io/Bazaar/'
+     });
   const header = document.querySelector("[data-header]") as HTMLElement;
   const navbarMenu = document.getElementById("menu") as HTMLElement;
   const burgerMenu = document.getElementById("burger") as HTMLElement;

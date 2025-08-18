@@ -1,7 +1,51 @@
 export const Constants={
     API_URL:'https://localhost:5006',
-    API_URL_TICKET:'http://localhost:5005',
+    API_URL_TICKET:'https://fixtic.somee.com',
     API_URLUSER:'http://localhost:5000',
+    
+    SOCIAL_MEDIA: {
+        FACEBOOK: 'https://www.facebook.com/profile.php?id=61577291160335',
+        INSTAGRAM: 'https://www.instagram.com/dev.bazaar/',
+        LINKEDIN: 'https://www.linkedin.com/',
+        YOUTUBE: 'https://www.youtube.com/',
+        TWITTER: 'https://twitter.com/tuempresa',
+        WHATSAPP: 'https://wa.me/+5352529615',
+        GITHUB: 'https://github.com/TDevBazaar'
+    },
+    
+    ADS: {
+        GOOGLE_ADSENSE: {
+            PUBLISHER_ID: 'ca-pub-TU_PUBLISHER_ID',
+            ENABLED: true,
+            POSITIONS: {
+                HEADER: 'header-banner',
+                SIDEBAR: 'sidebar-ad',
+                CONTENT: 'content-ad',
+                FOOTER: 'footer-banner'
+            }
+        },
+        NATIVE_ADS: {
+            ENABLED: true,
+            SPONSORED_CONTENT: [
+                {
+                    id: 'dev-tools',
+                    title: 'Herramientas de Desarrollo Premium',
+                    description: 'Accede a las mejores herramientas para desarrolladores',
+                    image: 'assets/img/ad-tools.webp',
+                    link: 'https://ejemplo.com/herramientas',
+                    cta: 'Ver Ofertas'
+                },
+                {
+                    id: 'hosting-services',
+                    title: 'Hosting de Alto Rendimiento',
+                    description: 'Servidores optimizados para aplicaciones web',
+                    image: 'assets/img/ad-hosting.webp',
+                    link: 'https://ejemplo.com/hosting',
+                    cta: 'Conocer Planes'
+                }
+            ]
+        }
+    },
     
     NOMENCLADORES:{
         TIPO_SUSTP:'/api/TipoSustP'
@@ -20,7 +64,7 @@ export const Constants={
     },
     EcommerceDetail: {
     id: 1,
-    title: 'Desarrollo de Tienda E-commerce Premium',
+    title: 'Desarrollo de Tienda E-commerce',
     category: 'Desarrollo Web',
     description: 'Tienda online completa con carrito de compras, pasarela de pago integrada, panel de administración y diseño responsive optimizado para SEO. Ideal para negocios que buscan expandir su presencia online.',
     featuredImage: 'assets/img/sale.webp',
@@ -99,17 +143,17 @@ export const Constants={
   title: 'Desarrollo de Aplicación de Catálogo Digital',
   category: 'Soluciones Digitales',
   description: 'Catálogo interactivo para mostrar productos o servicios con filtros avanzados, búsqueda inteligente y diseño adaptable. Ideal para minoristas, distribuidores y empresas que necesitan exhibir sus ofertas de manera profesional y accesible.',
-  featuredImage: 'assets/img/catalog-hero.webp',
+  featuredImage: 'assets/img/c2.webp',
   price: 850,
   discountPrice: 650,
   discount: 24,
   stock: 12,
   reviews: 31,
   images: [
-    'assets/img/catalog1.webp',
-    'assets/img/catalog2.webp',
-    'assets/img/catalog3.webp',
-    'assets/img/catalog4.webp'
+    'assets/img/c1-1.webp',
+    'assets/img/c2.webp',
+    'assets/img/c3.webp',
+    'assets/img/c4.webp'
   ],
   features: [
     { 
@@ -176,20 +220,20 @@ export const Constants={
 },
   ReservationAppDetail: {
   id: 1,
-  title: 'Desarrollo de Sistema de Reservas Premium',
+  title: 'Desarrollo de Sistema de Reservas',
   category: 'Aplicaciones Empresariales',
   description: 'Solución completa para gestión de reservas con calendario en tiempo real, confirmación automática, recordatorios y pagos integrados. Ideal para restaurantes, hoteles, clínicas y servicios que requieren gestión de citas.',
-  featuredImage: 'assets/img/reservation-hero.webp',
+  featuredImage: 'assets/img/a1.webp',
   price: 1200,
   discountPrice: 900,
   discount: 25,
   stock: 8,
   reviews: 36,
   images: [
-    'assets/img/reservation1.webp',
-    'assets/img/reservation2.webp',
-    'assets/img/reservation3.webp',
-    'assets/img/reservation4.webp'
+    'assets/img/a1.webp',
+    'assets/img/a2.webp',
+    'assets/img/a3.webp',
+    'assets/img/a4.webp'
   ],
   features: [
     { 
@@ -260,17 +304,17 @@ CustomAppDetail: {
   title: 'Desarrollo de Aplicaciones Personalizadas',
   category: 'Soluciones Empresariales',
   description: 'Software a medida diseñado específicamente para resolver tus desafíos únicos. Desde aplicaciones web hasta móviles y de escritorio, creamos soluciones que se integran perfectamente con tus procesos y escalan con tu negocio.',
-  featuredImage: 'assets/img/custom-hero.webp',
+  featuredImage: 'assets/img/p3.webp',
   price: 0, // Normalmente se cotiza por proyecto
   discountPrice: 0,
   discount: 0,
   stock: 0, // Servicio continuo
   reviews: 47,
   images: [
-    'assets/img/custom1.webp',
-    'assets/img/custom2.webp',
-    'assets/img/custom3.webp',
-    'assets/img/custom4.webp'
+    'assets/img/p1.webp',
+    'assets/img/p2.webp',
+    'assets/img/p3.webp',
+    'assets/img/p4.webp'
   ],
   features: [
     { 
@@ -342,7 +386,7 @@ RepairServiceDetail : {
   title: 'Servicio Técnico Especializado en Reparaciones',
   category: 'Soporte Técnico',
   description: 'Soluciones rápidas y confiables para reparación de dispositivos electrónicos, equipos informáticos y electrodomésticos. Diagnóstico gratuito, repuestos originales y garantía en todas nuestras reparaciones.',
-  featuredImage: 'assets/img/repair-hero.webp',
+  featuredImage: 'assets/img/Reparacion.webp',
   price: 0, // Varía según el problema
   discountPrice: 0,
   discount: 0,
@@ -350,10 +394,6 @@ RepairServiceDetail : {
   stock: 0, // Servicio ilimitado
   reviews: 68,
   images: [
-    'assets/img/repair1.webp',
-    'assets/img/repair2.webp',
-    'assets/img/repair3.webp',
-    'assets/img/repair4.webp'
   ],
   features: [
     { 
@@ -449,7 +489,7 @@ MaintenanceServiceDetail : {
   title: 'Servicio de Mantenimiento Preventivo y Correctivo',
   category: 'Soporte Técnico',
   description: 'Planes de mantenimiento personalizados para maximizar la vida útil y rendimiento de tus equipos. Evita fallos costosos con nuestro servicio profesional que incluye limpieza, diagnóstico, optimización y reportes detallados.',
-  featuredImage: 'assets/img/maintenance-hero.webp',
+  featuredImage: 'assets/img/Mantenimiento.webp',
   price: 0, // Varía según el plan
   discountPrice: 0,
   discount: 0,
@@ -457,10 +497,6 @@ MaintenanceServiceDetail : {
   stock: 0, // Servicio ilimitado
   reviews: 52,
   images: [
-    'assets/img/maintenance1.webp',
-    'assets/img/maintenance2.webp',
-    'assets/img/maintenance3.webp',
-    'assets/img/maintenance4.webp'
   ],
   features: [
     { 
@@ -582,7 +618,7 @@ UtilitiesServiceDetail : {
   title: 'Paquete Premium de Utilidades y Herramientas',
   category: 'Software y Soporte',
   description: 'Colección esencial de herramientas, drivers y software para optimizar y mantener tu sistema funcionando perfectamente. Todo lo que necesitas en un solo paquete para maximizar el rendimiento de tus dispositivos.',
-  featuredImage: 'assets/img/utilities-hero.webp',
+  featuredImage: 'assets/img/Utilidades.webp',
   price: 49.99,
   discountPrice: 39.99,
   discount: 20,
@@ -590,10 +626,6 @@ UtilitiesServiceDetail : {
   stock: 0, // Servicio digital ilimitado
   reviews: 87,
   images: [
-    'assets/img/utilities1.webp',
-    'assets/img/utilities2.webp',
-    'assets/img/utilities3.webp',
-    'assets/img/utilities4.webp'
   ],
   features: [
     { 

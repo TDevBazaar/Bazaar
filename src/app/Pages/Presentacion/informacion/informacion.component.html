@@ -1,3 +1,6 @@
+<!-- Componente de alertas -->
+<app-alert-container></app-alert-container>
+
 <button (click)="navegar()" class="atras">Atras</button>
 
 <div *ngIf="parametro=='Consulta'" class="flex">
@@ -89,7 +92,7 @@
                             <i class="fas fa-cloud-upload-alt"></i>
                             <p>Arrastra tus imágenes aquí o haz clic para seleccionar</p>
                             <p class="small">(Formatos aceptados: JPG, PNG - Máx. 5 archivos)</p>
-                            <input (change)="onFileSelected($event)" formControlName="imagenes" type="file" id="archivos" name="archivos" multiple accept="image/*">
+                            <input placeholder="Selecciona tus imágenes" (change)="onFileSelected($event)" formControlName="imagenes" type="file" id="archivos" name="archivos" multiple accept="image/*">
                         </div>
                     </div>
 
