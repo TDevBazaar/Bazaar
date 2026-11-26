@@ -1,0 +1,145 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-space), ui-sans-serif, system-ui, sans-serif;
+  --color-brand-500: #7c3aed;
+  --color-brand-600: #6d28d9;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    color-scheme: light;
+  }
+
+  body {
+    background-color: #ffffff;
+    color: #09090b;
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+    letter-spacing: -0.025em;
+  }
+}
+
+.bg-grid-light {
+  background-image:
+    linear-gradient(to right, rgba(96, 24, 248, 0.065) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(96, 24, 248, 0.065) 1px, transparent 1px);
+  background-size: 44px 44px;
+}
+
+.radial-glow-light {
+  background: radial-gradient(
+    ellipse 65% 50% at 50% 0%,
+    rgba(139, 92, 246, 0.14),
+    rgba(167, 139, 250, 0.04) 55%,
+    transparent 80%
+  );
+}
+
+/* Original-inspired Hero animations */
+@keyframes heroMorph {
+  0%,
+  100% {
+    border-radius: 42% 58% 70% 30% / 44% 42% 58% 56%;
+  }
+  34% {
+    border-radius: 68% 32% 50% 50% / 32% 36% 64% 68%;
+  }
+  67% {
+    border-radius: 82% 48% 58% 82% / 76% 72% 48% 52%;
+  }
+}
+
+@keyframes heroReveal {
+  from {
+    opacity: 0;
+    transform: translateY(28px);
+    filter: blur(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+@keyframes scrollBounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(7px);
+  }
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-hero-morph {
+  animation: heroMorph 5.5s ease-in-out infinite;
+}
+
+.animate-hero-reveal {
+  opacity: 0;
+  animation: heroReveal 0.65s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.animate-scroll-bounce {
+  animation: scrollBounce 1.8s ease-in-out infinite;
+}
+
+.animate-fade-up {
+  animation: fadeUp 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-hero-morph,
+  .animate-scroll-bounce,
+  .animate-fade-up {
+    animation: none;
+  }
+  .animate-hero-reveal {
+    opacity: 1;
+    animation: none;
+    filter: none;
+    transform: none;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f4f4f5;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c4b5fd;
+  border-radius: 9999px;
+  border: 2px solid #f4f4f5;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #7c3aed;
+}
