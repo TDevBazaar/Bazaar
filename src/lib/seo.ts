@@ -1,6 +1,7 @@
 import { faqItems } from "@/data/faq";
 import { services, type ServiceItem } from "@/data/services";
 import { siteConfig } from "@/data/site";
+import type { ProductView } from "@/lib/store/powergy-api";
 
 const ORGANIZATION_ID = `${siteConfig.siteUrl}/#organization`;
 const WEBSITE_ID = `${siteConfig.siteUrl}/#website`;
@@ -200,5 +201,84 @@ export function buildBreadcrumbJsonLd(
       name: item.name,
       item: `${siteConfig.siteUrl}${item.href}`,
     })),
+  };
+}
+
+export function buildStoreCollectionJsonLd({
+  name,
+  description,
+  path,
+  products,
+}: {
+  name: string;
+  description: string;
+  path: string;
+  products: ProductView[];
+}) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "CollectionPage",
+    name,
+    description,
+    url: `${siteConfig.siteUrl}${path}`,
+    inLanguage: siteConfig.language,
+    isPartOf: {
+      "@id": WEBSITE_ID,
+    },
+    ...(products.length > 0
+      ? {
+          mainEntity: {
+            "@type": "ItemList",
+            numberOfItems: products.length,
+            itemListElement: products.map((product, index) => ({
+              "@type": "ListItem",
+              position: index + 1,
+              url: `${siteConfig.siteUrl}/tienda/${encodeURIComponent(product.slug)}`,
+              name: product.name,
+              ...(product.image ? { image: product.image } : {}),
+            })),
+          },
+        }
+      : {}),
+  };
+}
+
+export function buildProductJsonLd(product: ProductView) {
+  const url = `${siteConfig.siteUrl}/tienda/${encodeURIComponent(product.slug)}`;
+  return {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    name: product.name,
+    description: product.description || product.name,
+    sku: product.id,
+    ...(product.model ? { mpn: product.model } : {}),
+    ...(product.image ? { image: [product.image] } : {}),
+    ...(product.brand
+      ? { brand: { "@type": "Brand", name: product.brand } }
+      : {}),
+    category: product.categoryName,
+    url,
+    ...(product.price > 0
+      ? {
+          offers: {
+            "@type": "Offer",
+            priceCurrency: "USD",
+            price: product.price,
+            availability: "https://schema.org/InStock",
+            itemCondition: "https://schema.org/NewCondition",
+            url,
+            seller: {
+              "@type": "Organization",
+              "@id": ORGANIZATION_ID,
+              name: siteConfig.name,
+              url: siteConfig.siteUrl,
+            },
+            areaServed: {
+              "@type": "Country",
+              name: "Cuba",
+            },
+          },
+        }
+      : {}),
   };
 }

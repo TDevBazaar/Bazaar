@@ -2,7 +2,14 @@ import { Suspense } from "react";
 import type { Metadata } from "next";
 import { StoreCatalogClient } from "@/components/store/StoreCatalogClient";
 import { siteConfig } from "@/data/site";
-import { buildBreadcrumbJsonLd } from "@/lib/seo";
+import { buildBreadcrumbJsonLd, buildStoreCollectionJsonLd } from "@/lib/seo";
+import {
+  fetchCatalogMetaServer,
+  fetchStoreCategoriesServer,
+  fetchStoreProductsServer,
+} from "@/lib/store/powergy-server";
+
+export const revalidate = 120;
 
 export const metadata: Metadata = {
   title: "Tienda de Tecnología, Equipos y Repuestos en Cuba",
@@ -23,19 +30,46 @@ export const metadata: Metadata = {
       "Equipos, accesorios y repuestos de tecnología verificados por Deve en Cuba.",
     url: `${siteConfig.siteUrl}/tienda`,
   },
+  twitter: {
+    card: "summary_large_image",
+    title: `Tienda de Tecnología y Repuestos en Cuba | ${siteConfig.name}`,
+    description:
+      "Equipos, accesorios y repuestos de tecnología verificados por Deve en Cuba.",
+  },
 };
 
-export default function TiendaPage() {
+export default async function TiendaPage() {
+  const [initialCategories, initialMeta] = await Promise.all([
+    fetchStoreCategoriesServer(),
+    fetchCatalogMetaServer(),
+  ]);
+  const initialPage = await fetchStoreProductsServer(
+    { page: 1, pageSize: 12, sort: "destacados" },
+    initialCategories
+  );
+
   const breadcrumbJsonLd = buildBreadcrumbJsonLd([
     { name: "Inicio", href: "/" },
     { name: "Tienda", href: "/tienda" },
   ]);
+
+  const collectionJsonLd = buildStoreCollectionJsonLd({
+    name: `Tienda de Tecnología y Repuestos en Cuba | ${siteConfig.name}`,
+    description:
+      "Catálogo de equipos, accesorios y repuestos verificados por Deve en Cuba.",
+    path: "/tienda",
+    products: initialPage.items,
+  });
 
   return (
     <>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(collectionJsonLd) }}
       />
       <Suspense
         fallback={
@@ -44,7 +78,13 @@ export default function TiendaPage() {
           </div>
         }
       >
-        <StoreCatalogClient />
+        <StoreCatalogClient
+          initialCategories={initialCategories}
+          initialProducts={initialPage.items}
+          initialTotalItems={initialPage.totalItems}
+          initialTotalPages={initialPage.totalPages}
+          initialMeta={initialMeta}
+        />
       </Suspense>
     </>
   );

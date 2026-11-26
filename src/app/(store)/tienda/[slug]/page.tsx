@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { ProductDetailClient } from "@/components/store/ProductDetailClient";
 import { siteConfig } from "@/data/site";
-import { buildBreadcrumbJsonLd } from "@/lib/seo";
+import { buildBreadcrumbJsonLd, buildProductJsonLd } from "@/lib/seo";
 import { formatPriceLabel } from "@/lib/store/format";
 import { fetchProductServerSide } from "@/lib/store/powergy-api";
 
@@ -29,26 +29,42 @@ export async function generateMetadata({
   if (!product) {
     return {
       title: "Producto | Tienda",
-      description: `Ficha de producto en ${siteConfig.name} Tienda.`,
+      description: `Ficha de producto en ${siteConfig.name} Tienda en Cuba.`,
     };
   }
 
   const priceText = formatPriceLabel(product.price);
   const description =
     product.description?.trim().slice(0, 155) ||
-    `${product.name} (${priceText}) disponible en ${siteConfig.name} Tienda.`;
+    `${product.name} (${priceText}) disponible en ${siteConfig.name} Tienda en Cuba.`;
+  const canonicalPath = `/tienda/${encodeURIComponent(product.slug)}`;
 
   return {
-    title: product.name,
+    title: `${product.name} · ${product.categoryName}`,
     description,
+    keywords: [
+      product.name,
+      product.categoryName,
+      ...(product.brand ? [`${product.brand} Cuba`] : []),
+      `${product.categoryName} Cuba`,
+      `${siteConfig.name} tienda`,
+    ],
     alternates: {
-      canonical: `/tienda/${encodeURIComponent(product.slug)}`,
+      canonical: canonicalPath,
     },
     openGraph: {
       title: `${product.name} · ${priceText}`,
       description,
-      url: `${siteConfig.siteUrl}/tienda/${encodeURIComponent(product.slug)}`,
-      images: product.image ? [{ url: product.image, alt: product.name }] : undefined,
+      url: `${siteConfig.siteUrl}${canonicalPath}`,
+      images: product.image
+        ? [{ url: product.image, alt: product.name }]
+        : undefined,
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: `${product.name} · ${priceText}`,
+      description,
+      images: product.image ? [product.image] : undefined,
     },
   };
 }
@@ -64,6 +80,10 @@ export default async function ProductDetailPage({ params }: ProductPageProps) {
     ...(initialProduct
       ? [
           {
+            name: initialProduct.categoryName,
+            href: `/tienda/categoria/${encodeURIComponent(initialProduct.category)}`,
+          },
+          {
             name: initialProduct.name,
             href: `/tienda/${encodeURIComponent(initialProduct.slug)}`,
           },
@@ -72,28 +92,7 @@ export default async function ProductDetailPage({ params }: ProductPageProps) {
   ]);
 
   const productJsonLd = initialProduct
-    ? {
-        "@context": "https://schema.org",
-        "@type": "Product",
-        name: initialProduct.name,
-        description: initialProduct.description || initialProduct.name,
-        image: initialProduct.image || undefined,
-        brand: initialProduct.brand
-          ? { "@type": "Brand", name: initialProduct.brand }
-          : undefined,
-        category: initialProduct.categoryName,
-        ...(initialProduct.price > 0
-          ? {
-              offers: {
-                "@type": "Offer",
-                priceCurrency: "USD",
-                price: initialProduct.price,
-                availability: "https://schema.org/InStock",
-                url: `${siteConfig.siteUrl}/tienda/${encodeURIComponent(initialProduct.slug)}`,
-              },
-            }
-          : {}),
-      }
+    ? buildProductJsonLd(initialProduct)
     : null;
 
   return (

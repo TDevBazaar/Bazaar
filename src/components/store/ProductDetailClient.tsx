@@ -147,7 +147,7 @@ export function ProductDetailClient({
         </Link>
         <ChevronRight className="h-3.5 w-3.5" />
         <Link
-          href={`/tienda?categoria=${encodeURIComponent(product.category)}`}
+          href={`/tienda/categoria/${encodeURIComponent(product.category)}`}
           className="hover:text-violet-700"
         >
           {product.categoryName}
@@ -209,7 +209,7 @@ export function ProductDetailClient({
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <Link
-                href={`/tienda?categoria=${encodeURIComponent(product.category)}`}
+                href={`/tienda/categoria/${encodeURIComponent(product.category)}`}
                 className="rounded-full bg-violet-50 px-3 py-1 text-xs font-bold text-violet-800 transition hover:bg-violet-100"
               >
                 {product.categoryName}
@@ -377,7 +377,7 @@ export function ProductDetailClient({
               </h2>
             </div>
             <Link
-              href={`/tienda?categoria=${encodeURIComponent(product.category)}`}
+              href={`/tienda/categoria/${encodeURIComponent(product.category)}`}
               className="text-xs font-semibold text-violet-700 hover:text-violet-900"
             >
               Ver toda la categoría →

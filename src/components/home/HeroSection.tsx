@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, ChevronDown, MessageCircle } from "lucide-react";
+import { ArrowRight, ChevronDown, MessageCircle, ShoppingBag } from "lucide-react";
 import { DeveWordmark } from "@/components/brand/DeveWordmark";
 import { HeroMorphArt } from "@/components/visuals/HeroMorphArt";
 import { getWhatsAppUrl } from "@/data/site";
@@ -56,14 +56,21 @@ export function HeroSection() {
                 Consultar Gratis
                 <ArrowRight className="h-4 w-4" />
               </Link>
+              <Link
+                href="/tienda"
+                className="inline-flex items-center gap-2 rounded-full border border-violet-200 bg-violet-50 px-6 py-3.5 text-sm font-semibold text-violet-900 shadow-2xs transition-all hover:border-violet-300 hover:bg-violet-100"
+              >
+                <ShoppingBag className="h-4 w-4 text-[#6018F8]" />
+                Ir a la Tienda
+              </Link>
               <a
                 href={whatsappUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 rounded-full border border-zinc-300 bg-white px-7 py-3.5 text-sm font-semibold text-zinc-900 shadow-xs transition-all hover:border-emerald-400 hover:bg-emerald-50 hover:text-emerald-900"
+                className="inline-flex items-center gap-2 rounded-full border border-zinc-300 bg-white px-6 py-3.5 text-sm font-semibold text-zinc-900 shadow-xs transition-all hover:border-emerald-400 hover:bg-emerald-50 hover:text-emerald-900"
               >
                 <MessageCircle className="h-4 w-4 text-emerald-600" />
-                Contáctanos
+                WhatsApp
               </a>
             </div>
           </div>

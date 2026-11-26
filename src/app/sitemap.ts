@@ -7,6 +7,7 @@ import {
   type ApiPage,
   type ApiProduct,
 } from "@/lib/store/powergy-api";
+import { fetchStoreCategoriesServer } from "@/lib/store/powergy-server";
 
 export const revalidate = 3600;
 
@@ -34,7 +35,7 @@ async function fetchActiveProductEntries(): Promise<MetadataRoute.Sitemap> {
           url: `${siteConfig.siteUrl}/tienda/${encodeURIComponent(item.slug)}`,
           lastModified: item.updatedAt ? new Date(item.updatedAt) : new Date(),
           changeFrequency: "weekly",
-          priority: 0.75,
+          priority: 0.8,
         });
       }
       if (page >= data.totalPages || data.items.length === 0) break;
@@ -66,7 +67,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       url: `${siteConfig.siteUrl}/tienda`,
       lastModified: now,
       changeFrequency: "daily",
-      priority: 0.9,
+      priority: 0.95,
     },
     {
       url: `${siteConfig.siteUrl}/consulta`,
@@ -95,7 +96,22 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.9,
   }));
 
-  const productRoutes = await fetchActiveProductEntries();
+  const [categories, productRoutes] = await Promise.all([
+    fetchStoreCategoriesServer(3600),
+    fetchActiveProductEntries(),
+  ]);
 
-  return [...staticRoutes, ...serviceRoutes, ...productRoutes];
+  const categoryRoutes: MetadataRoute.Sitemap = categories.map((cat) => ({
+    url: `${siteConfig.siteUrl}/tienda/categoria/${encodeURIComponent(cat.slug)}`,
+    lastModified: now,
+    changeFrequency: "daily",
+    priority: 0.85,
+  }));
+
+  return [
+    ...staticRoutes,
+    ...serviceRoutes,
+    ...categoryRoutes,
+    ...productRoutes,
+  ];
 }

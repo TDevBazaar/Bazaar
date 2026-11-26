@@ -7,12 +7,15 @@ import { PortfolioSection } from "@/components/home/PortfolioSection";
 import { PricingSection } from "@/components/home/PricingSection";
 import { ProcessSection } from "@/components/home/ProcessSection";
 import { ServicesShowcase } from "@/components/home/ServicesShowcase";
+import { StoreShowcaseSection } from "@/components/home/StoreShowcaseSection";
 import { TestimonialsSection } from "@/components/home/TestimonialsSection";
 import { TrustStrip } from "@/components/home/TrustStrip";
 import { ValuePillars } from "@/components/home/ValuePillars";
 import { Reveal } from "@/components/ui/Reveal";
 import { siteConfig } from "@/data/site";
 import { buildFaqJsonLd } from "@/lib/seo";
+
+export const revalidate = 120;
 
 export const metadata: Metadata = {
   title: {
@@ -40,6 +43,9 @@ export default function HomePage() {
       </Reveal>
       <Reveal>
         <ServicesShowcase />
+      </Reveal>
+      <Reveal>
+        <StoreShowcaseSection />
       </Reveal>
       <Reveal>
         <PortfolioSection />

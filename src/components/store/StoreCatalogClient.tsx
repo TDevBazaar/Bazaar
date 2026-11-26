@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   AlertCircle,
+  ChevronRight,
   Loader2,
   PackageOpen,
   RefreshCw,
@@ -26,6 +27,11 @@ import {
   useCategories,
 } from "@/lib/store/catalog";
 import { formatPrice } from "@/lib/store/format";
+import type {
+  ApiCatalogMeta,
+  CategoryView,
+  ProductView,
+} from "@/lib/store/powergy-api";
 import type { FilterState, SortId } from "@/lib/store/types";
 import { useCatalogFeed } from "@/lib/store/useCatalogFeed";
 
@@ -41,17 +47,39 @@ function parseSort(raw: string | null): SortId {
   return "destacados";
 }
 
-export function StoreCatalogClient() {
+interface StoreCatalogClientProps {
+  initialCategories?: CategoryView[];
+  initialProducts?: ProductView[];
+  initialTotalItems?: number | null;
+  initialTotalPages?: number;
+  initialMeta?: ApiCatalogMeta | null;
+  lockedCategory?: string;
+  lockedCategoryName?: string;
+}
+
+export function StoreCatalogClient({
+  initialCategories = [],
+  initialProducts = [],
+  initialTotalItems = null,
+  initialTotalPages = 0,
+  initialMeta = null,
+  lockedCategory,
+  lockedCategoryName,
+}: StoreCatalogClientProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const categories = useCategories();
-  const meta = useCatalogMeta();
+  const storeCategories = useCategories();
+  const storeMeta = useCatalogMeta();
 
-  const urlCat = searchParams.get("categoria")?.trim() ?? "";
+  const categories =
+    storeCategories.length > 0 ? storeCategories : initialCategories;
+  const meta = storeMeta ?? initialMeta;
+
+  const urlCat = lockedCategory ? "" : (searchParams.get("categoria")?.trim() ?? "");
   const urlQ = searchParams.get("q")?.trim() ?? "";
   const urlOffers = searchParams.get("ofertas") === "1";
   const urlSort = parseSort(searchParams.get("orden"));
-  const urlKey = `${urlCat}|${urlQ}|${urlOffers ? "1" : "0"}|${urlSort}`;
+  const urlKey = `${lockedCategory ?? ""}|${urlCat}|${urlQ}|${urlOffers ? "1" : "0"}|${urlSort}`;
 
   const urlFilters = useMemo<FilterState>(
     () => ({
@@ -106,30 +134,48 @@ export function StoreCatalogClient() {
     sentinelRef,
   } = useCatalogFeed({
     filters,
+    lockedCategory,
     pageSize: 20,
     cursorLimit: 12,
   });
 
+  // Usa los productos pre-renderizados del servidor (SSR) en el primer pintado cuando no hay filtros activos
+  const isDefaultView =
+    !filters.q.trim() &&
+    filters.cats.length === 0 &&
+    filters.maxPrice === 0 &&
+    !filters.onlyOffers &&
+    filters.sort === "destacados" &&
+    feedPage === 1;
+
+  const usingSsrFallback =
+    feedLoadingInitial && isDefaultView && initialProducts.length > 0;
+  const visibleItems = usingSsrFallback ? initialProducts : feedItems;
+  const visibleTotalItems = usingSsrFallback
+    ? initialTotalItems
+    : feedTotalItems;
+  const visibleTotalPages = usingSsrFallback
+    ? initialTotalPages
+    : feedTotalPages;
+  const showSkeleton = feedLoadingInitial && !usingSsrFallback;
+
   const activeCount = activeFilterCount(filters);
   const hasAnyFilter = activeCount > 0 || Boolean(filters.q.trim());
 
+  const basePath = lockedCategory
+    ? `/tienda/categoria/${encodeURIComponent(lockedCategory)}`
+    : "/tienda";
+
   const updateUrl = (next: FilterState) => {
     const params = new URLSearchParams();
-    if (next.cats.length === 1) params.set("categoria", next.cats[0]);
+    if (!lockedCategory && next.cats.length === 1) {
+      params.set("categoria", next.cats[0]);
+    }
     if (next.q.trim()) params.set("q", next.q.trim());
     if (next.onlyOffers) params.set("ofertas", "1");
     if (next.sort !== "destacados") params.set("orden", next.sort);
     const qs = params.toString();
-    router.replace(qs ? `/tienda?${qs}` : "/tienda", { scroll: false });
-  };
-
-  const selectSingleCategory = (slug: string | null) => {
-    const next: FilterState = {
-      ...filters,
-      cats: slug ? [slug] : [],
-    };
-    setFilters(next);
-    updateUrl(next);
+    router.replace(qs ? `${basePath}?${qs}` : basePath, { scroll: false });
   };
 
   const toggleCategory = (slug: string) => {
@@ -150,16 +196,40 @@ export function StoreCatalogClient() {
 
   const resetFilters = () => {
     setFilters(DEFAULT_FILTERS);
-    router.replace("/tienda", { scroll: false });
+    router.replace(basePath, { scroll: false });
   };
 
-  const activeCategoryObj =
-    filters.cats.length === 1
+  const activeCategoryObj = lockedCategory
+    ? categories.find((c) => c.slug === lockedCategory)
+    : filters.cats.length === 1
       ? categories.find((c) => c.slug === filters.cats[0])
       : null;
 
+  const activeCategoryTitle =
+    activeCategoryObj?.name ?? lockedCategoryName ?? null;
+
   return (
     <div className="mx-auto max-w-7xl px-4 pb-20 pt-8 sm:px-6 sm:pt-10 lg:px-8">
+      {/* Breadcrumb semántico cuando es una página de categoría SEO */}
+      {lockedCategory && (
+        <nav
+          aria-label="Ruta de navegación"
+          className="mb-4 flex flex-wrap items-center gap-1.5 text-xs font-medium text-zinc-500"
+        >
+          <Link href="/" className="hover:text-violet-700">
+            Inicio
+          </Link>
+          <ChevronRight className="h-3.5 w-3.5" />
+          <Link href="/tienda" className="hover:text-violet-700">
+            Tienda
+          </Link>
+          <ChevronRight className="h-3.5 w-3.5" />
+          <span className="font-semibold text-zinc-900">
+            {activeCategoryTitle ?? lockedCategory}
+          </span>
+        </nav>
+      )}
+
       {/* Cabecera editorial de la tienda */}
       <section className="relative overflow-hidden rounded-3xl border border-zinc-200/90 bg-white/90 p-6 shadow-xs backdrop-blur-xs sm:p-8 lg:p-10">
         <div
@@ -170,19 +240,19 @@ export function StoreCatalogClient() {
           <div className="max-w-2xl">
             <span className="inline-flex items-center gap-2 rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-800">
               <Sparkles className="h-3.5 w-3.5 text-violet-600" />
-              Deve Tienda · Tecnología, Equipos y Accesorios
+              Deve Tienda · Tecnología y Repuestos en Cuba
             </span>
             <h1 className="mt-3 font-display text-3xl font-bold tracking-tight text-zinc-950 sm:text-4xl lg:text-[2.6rem]">
-              {activeCategoryObj
-                ? activeCategoryObj.name
+              {activeCategoryTitle
+                ? `${activeCategoryTitle} en Cuba`
                 : filters.onlyOffers
                   ? "Ofertas y rebajas activas"
                   : "Catálogo de tecnología y repuestos"}
             </h1>
             <p className="mt-2.5 text-sm leading-relaxed text-zinc-600 sm:text-base">
-              Equipos, accesorios y componentes verificados por nuestro equipo
-              técnico en La Habana. Arma tu carrito y confirma tu pedido
-              directamente por WhatsApp.
+              {activeCategoryTitle
+                ? `Explora nuestra selección de ${activeCategoryTitle.toLowerCase()} verificados por el equipo técnico de Deve en Cuba. Arma tu carrito y confirma disponibilidad por WhatsApp.`
+                : "Equipos, accesorios y componentes verificados por nuestro equipo técnico en Cuba (taller en La Habana). Arma tu carrito y confirma tu pedido directamente por WhatsApp."}
             </p>
           </div>
 
@@ -270,27 +340,29 @@ export function StoreCatalogClient() {
           </div>
         </div>
 
-        {/* Pills rápidos de categorías */}
+        {/* Enlaces reales (<Link>) de categorías para SEO y navegación rápida */}
         {categories.length > 0 && (
-          <div className="relative mt-4 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => selectSingleCategory(null)}
+          <nav
+            aria-label="Categorías de la tienda"
+            className="relative mt-4 flex flex-wrap items-center gap-2"
+          >
+            <Link
+              href="/tienda"
               className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
-                filters.cats.length === 0
+                !lockedCategory && filters.cats.length === 0
                   ? "bg-zinc-950 text-white shadow-xs"
                   : "border border-zinc-200 bg-white text-zinc-700 hover:border-violet-300 hover:bg-violet-50 hover:text-violet-800"
               }`}
             >
               Todo
-            </button>
+            </Link>
             {categories.map((cat) => {
-              const selected = filters.cats.includes(cat.slug);
+              const selected =
+                lockedCategory === cat.slug || filters.cats.includes(cat.slug);
               return (
-                <button
+                <Link
                   key={cat.apiId}
-                  type="button"
-                  onClick={() => selectSingleCategory(selected ? null : cat.slug)}
+                  href={`/tienda/categoria/${encodeURIComponent(cat.slug)}`}
                   className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
                     selected
                       ? "bg-[#6018F8] text-white shadow-xs shadow-violet-600/25"
@@ -298,7 +370,7 @@ export function StoreCatalogClient() {
                   }`}
                 >
                   {cat.name}
-                </button>
+                </Link>
               );
             })}
             <button
@@ -313,42 +385,44 @@ export function StoreCatalogClient() {
               <Tag className="h-3 w-3" />
               Solo ofertas
             </button>
-          </div>
+          </nav>
         )}
 
         {/* Panel desplegable de filtros avanzados */}
         {showFilters && (
           <div className="mt-4 grid gap-5 rounded-2xl border border-zinc-200 bg-zinc-50/80 p-4 sm:grid-cols-2 lg:grid-cols-3">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-zinc-700">
-                Categorías (selección múltiple)
-              </p>
-              <div className="mt-2.5 flex flex-wrap gap-1.5">
-                {categories.length === 0 ? (
-                  <p className="text-xs text-zinc-500">
-                    Sin categorías activas todavía.
-                  </p>
-                ) : (
-                  categories.map((cat) => {
-                    const checked = filters.cats.includes(cat.slug);
-                    return (
-                      <button
-                        key={cat.apiId}
-                        type="button"
-                        onClick={() => toggleCategory(cat.slug)}
-                        className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
-                          checked
-                            ? "bg-[#6018F8] text-white"
-                            : "border border-zinc-200 bg-white text-zinc-700 hover:border-violet-300"
-                        }`}
-                      >
-                        {cat.name}
-                      </button>
-                    );
-                  })
-                )}
+            {!lockedCategory && (
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-zinc-700">
+                  Categorías (selección múltiple)
+                </p>
+                <div className="mt-2.5 flex flex-wrap gap-1.5">
+                  {categories.length === 0 ? (
+                    <p className="text-xs text-zinc-500">
+                      Sin categorías activas todavía.
+                    </p>
+                  ) : (
+                    categories.map((cat) => {
+                      const checked = filters.cats.includes(cat.slug);
+                      return (
+                        <button
+                          key={cat.apiId}
+                          type="button"
+                          onClick={() => toggleCategory(cat.slug)}
+                          className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                            checked
+                              ? "bg-[#6018F8] text-white"
+                              : "border border-zinc-200 bg-white text-zinc-700 hover:border-violet-300"
+                          }`}
+                        >
+                          {cat.name}
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
               </div>
-            </div>
+            )}
 
             <div>
               <div className="flex items-center justify-between gap-2">
@@ -417,11 +491,11 @@ export function StoreCatalogClient() {
       {/* Resumen de resultados */}
       <div className="mt-6 flex flex-wrap items-center justify-between gap-2 text-xs font-medium text-zinc-600">
         <div>
-          {!feedLoadingInitial && !feedError && (
+          {!showSkeleton && !feedError && (
             <span>
-              {typeof feedTotalItems === "number"
-                ? `${feedTotalItems} ${feedTotalItems === 1 ? "producto encontrado" : "productos encontrados"}`
-                : `${feedItems.length} ${feedItems.length === 1 ? "producto" : "productos"}`}
+              {typeof visibleTotalItems === "number"
+                ? `${visibleTotalItems} ${visibleTotalItems === 1 ? "producto encontrado" : "productos encontrados"}`
+                : `${visibleItems.length} ${visibleItems.length === 1 ? "producto" : "productos"}`}
             </span>
           )}
         </div>
@@ -438,7 +512,7 @@ export function StoreCatalogClient() {
       </div>
 
       {/* Estado de carga inicial */}
-      {feedLoadingInitial ? (
+      {showSkeleton ? (
         <div className="mt-5 grid grid-cols-2 gap-3.5 sm:gap-5 md:grid-cols-3 lg:grid-cols-4">
           {Array.from({ length: 8 }).map((_, i) => (
             <div
@@ -454,7 +528,7 @@ export function StoreCatalogClient() {
             </div>
           ))}
         </div>
-      ) : feedError ? (
+      ) : feedError && !usingSsrFallback ? (
         <div className="mt-8 rounded-3xl border border-rose-200 bg-white p-8 text-center shadow-xs">
           <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-50 text-rose-600">
             <AlertCircle className="h-6 w-6" />
@@ -474,7 +548,7 @@ export function StoreCatalogClient() {
             Reintentar
           </button>
         </div>
-      ) : feedItems.length === 0 ? (
+      ) : visibleItems.length === 0 ? (
         <div className="mt-8 rounded-3xl border border-zinc-200 bg-white px-6 py-14 text-center shadow-xs">
           <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-50 text-violet-700">
             <PackageOpen className="h-7 w-7" />
@@ -482,7 +556,9 @@ export function StoreCatalogClient() {
           <h2 className="mt-4 font-display text-xl font-bold text-zinc-950">
             {hasAnyFilter
               ? "No encontramos productos con esos filtros"
-              : "Aún no hay productos publicados"}
+              : lockedCategory
+                ? `Aún no hay productos en ${activeCategoryTitle ?? "esta categoría"}`
+                : "Aún no hay productos publicados"}
           </h2>
           <p className="mx-auto mt-2 max-w-md text-sm text-zinc-600">
             {hasAnyFilter
@@ -496,8 +572,15 @@ export function StoreCatalogClient() {
                 onClick={resetFilters}
                 className="inline-flex items-center gap-2 rounded-full bg-[#6018F8] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#5010E8]"
               >
-                Ver todo el catálogo
+                Limpiar filtros
               </button>
+            ) : lockedCategory ? (
+              <Link
+                href="/tienda"
+                className="inline-flex items-center gap-2 rounded-full bg-[#6018F8] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#5010E8]"
+              >
+                Ver todo el catálogo
+              </Link>
             ) : (
               <Link
                 href="/tienda/admin"
@@ -512,7 +595,7 @@ export function StoreCatalogClient() {
       ) : (
         <>
           <div className="mt-5 grid grid-cols-2 gap-3.5 sm:gap-5 md:grid-cols-3 lg:grid-cols-4">
-            {feedItems.map((product, index) => (
+            {visibleItems.map((product, index) => (
               <ProductCard
                 key={product.id}
                 product={product}
@@ -524,8 +607,8 @@ export function StoreCatalogClient() {
           {feedIsPaginated ? (
             <PaginationControls
               page={feedPage}
-              totalPages={feedTotalPages}
-              totalItems={feedTotalItems}
+              totalPages={visibleTotalPages}
+              totalItems={visibleTotalItems}
               pageSize={feedPageSize}
               onPageChange={(nextPage) => {
                 setFeedPage(nextPage);
