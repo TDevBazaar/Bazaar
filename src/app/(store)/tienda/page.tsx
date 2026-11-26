@@ -5,16 +5,22 @@ import { siteConfig } from "@/data/site";
 import { buildBreadcrumbJsonLd } from "@/lib/seo";
 
 export const metadata: Metadata = {
-  title: "Tienda de Tecnología, Equipos y Accesorios",
+  title: "Tienda de Tecnología, Equipos y Repuestos en Cuba",
   description:
-    "Explora el catálogo online de Deve en La Habana: equipos, accesorios, repuestos y tecnología verificada. Arma tu carrito y confirma tu pedido por WhatsApp.",
+    "Catálogo online de Deve en Cuba: equipos, accesorios, componentes y repuestos verificados por nuestro equipo técnico. Arma tu carrito y confirma por WhatsApp.",
+  keywords: [
+    "tienda de tecnología Cuba",
+    "accesorios y repuestos PC La Habana",
+    "comprar tecnología en Cuba",
+    "Deve tienda online",
+  ],
   alternates: {
     canonical: "/tienda",
   },
   openGraph: {
-    title: `Tienda | ${siteConfig.name}`,
+    title: `Tienda de Tecnología y Repuestos en Cuba | ${siteConfig.name}`,
     description:
-      "Equipos, accesorios y repuestos de tecnología verificados por Deve en La Habana.",
+      "Equipos, accesorios y repuestos de tecnología verificados por Deve en Cuba.",
     url: `${siteConfig.siteUrl}/tienda`,
   },
 };

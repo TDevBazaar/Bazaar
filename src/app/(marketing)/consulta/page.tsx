@@ -15,11 +15,23 @@ import { getWhatsAppUrl, siteConfig } from "@/data/site";
 import { buildBreadcrumbJsonLd } from "@/lib/seo";
 
 export const metadata: Metadata = {
-  title: "Consulta Técnica Gratuita",
+  title: "Consulta Gratuita de Software y Soporte Técnico en Cuba",
   description:
-    "Solicita una consulta técnica gratuita o asesoría de desarrollo web con Deve. Adjunta fotos de tu equipo o proyecto y recibe respuesta en menos de 24 horas.",
+    "Solicita un diagnóstico gratuito con Deve en Cuba: cotiza tu software a medida o consulta la reparación de tu PC, laptop o celular. Respuesta en menos de 24 horas.",
+  keywords: [
+    "consulta técnica gratuita Cuba",
+    "cotizar desarrollo de software Cuba",
+    "diagnóstico reparación laptop La Habana",
+    "soporte técnico online Cuba",
+  ],
   alternates: {
     canonical: "/consulta",
+  },
+  openGraph: {
+    title: `Consulta Gratuita de Software y Soporte Técnico en Cuba | ${siteConfig.name}`,
+    description:
+      "Diagnóstico sin compromiso para proyectos de software y reparación de equipos en Cuba.",
+    url: `${siteConfig.siteUrl}/consulta`,
   },
 };
 

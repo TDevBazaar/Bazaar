@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { ImageResponse } from "next/og";
 
-export const alt = "Deve — Desarrollo Web y Soporte Técnico en La Habana";
+export const alt =
+  "Deve — Desarrollo de Software y Soporte Técnico en Cuba";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -28,7 +29,6 @@ export default function OpenGraphImage() {
           fontFamily: "sans-serif",
         }}
       >
-        {/* Real Deve [D]eve Wordmark */}
         <div style={{ display: "flex", alignItems: "center" }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -56,7 +56,7 @@ export default function OpenGraphImage() {
             display: "flex",
             flexDirection: "column",
             gap: "20px",
-            maxWidth: "940px",
+            maxWidth: "960px",
           }}
         >
           <div
@@ -69,22 +69,24 @@ export default function OpenGraphImage() {
               textTransform: "uppercase",
             }}
           >
-            La Habana, Cuba · Consulta Gratis en menos de 24h
+            Cuba · Atención Remota Nacional y Taller en La Habana
           </div>
           <div
             style={{
-              fontSize: "60px",
+              fontSize: "58px",
               fontWeight: 800,
               lineHeight: 1.08,
               letterSpacing: "-0.03em",
               color: "#09090b",
             }}
           >
-            Desarrollo Web, Software a Medida y Soporte Técnico
+            Desarrollo de Software y Soporte Técnico en Cuba
           </div>
-          <div style={{ fontSize: "26px", color: "#52525b", lineHeight: 1.35 }}>
-            Tiendas E-commerce · Catálogos Digitales · Reservas · Reparación de
-            PCs y Celulares
+          <div
+            style={{ fontSize: "25px", color: "#52525b", lineHeight: 1.35 }}
+          >
+            Software a Medida · Tiendas Online · Apps Android · Reparación y
+            Mantenimiento de PCs y Celulares
           </div>
         </div>
 
@@ -99,7 +101,7 @@ export default function OpenGraphImage() {
             color: "#3f3f46",
           }}
         >
-          <span>10 de Octubre, Luyanó · La Habana</span>
+          <span>deve-blush.vercel.app · Consulta Gratis en 24h</span>
           <span style={{ color: "#5b21b6", fontWeight: 700 }}>
             WhatsApp +53 5252 9615
           </span>

@@ -6,11 +6,23 @@ import { siteConfig } from "@/data/site";
 import { buildBreadcrumbJsonLd } from "@/lib/seo";
 
 export const metadata: Metadata = {
-  title: "Servicios de Desarrollo Web y Soporte Técnico",
+  title: "Servicios de Desarrollo de Software y Soporte Técnico en Cuba",
   description:
-    "Explora todos los servicios de Deve: desarrollo de tiendas e-commerce, catálogos digitales, sistemas de reservas, software a medida y reparación técnica en La Habana.",
+    "Servicios de Deve en Cuba: desarrollo de software a medida, tiendas e-commerce, catálogos digitales, sistemas de reservas y soporte técnico para PCs, laptops y celulares.",
+  keywords: [
+    "servicios de desarrollo de software en Cuba",
+    "soporte técnico informático en Cuba",
+    "desarrollo web y tiendas online Cuba",
+    "reparación y mantenimiento de computadoras Cuba",
+  ],
   alternates: {
     canonical: "/servicios",
+  },
+  openGraph: {
+    title: `Servicios de Desarrollo de Software y Soporte Técnico en Cuba | ${siteConfig.name}`,
+    description:
+      "Soluciones de software a medida, desarrollo web y soporte técnico informático en Cuba.",
+    url: `${siteConfig.siteUrl}/servicios`,
   },
 };
 

@@ -1,8 +1,52 @@
 import type { MetadataRoute } from "next";
 import { services } from "@/data/services";
 import { siteConfig } from "@/data/site";
+import {
+  STORE_KEY,
+  getPowergyApiServerBase,
+  type ApiPage,
+  type ApiProduct,
+} from "@/lib/store/powergy-api";
 
-export default function sitemap(): MetadataRoute.Sitemap {
+export const revalidate = 3600;
+
+async function fetchActiveProductEntries(): Promise<MetadataRoute.Sitemap> {
+  const apiBase = getPowergyApiServerBase();
+  const entries: MetadataRoute.Sitemap = [];
+
+  try {
+    for (let page = 1; page <= 3; page += 1) {
+      const params = new URLSearchParams({
+        store: STORE_KEY,
+        page: String(page),
+        pageSize: "100",
+      });
+      const res = await fetch(`${apiBase}/api/products?${params.toString()}`, {
+        headers: { Accept: "application/json" },
+        next: { revalidate: 3600 },
+        signal: AbortSignal.timeout(2500),
+      });
+      if (!res.ok) break;
+      const data = (await res.json()) as ApiPage<ApiProduct>;
+      for (const item of data.items) {
+        if (!item?.slug) continue;
+        entries.push({
+          url: `${siteConfig.siteUrl}/tienda/${encodeURIComponent(item.slug)}`,
+          lastModified: item.updatedAt ? new Date(item.updatedAt) : new Date(),
+          changeFrequency: "weekly",
+          priority: 0.75,
+        });
+      }
+      if (page >= data.totalPages || data.items.length === 0) break;
+    }
+  } catch {
+    /* Respaldo silencioso: nunca romper sitemap.xml si el API no responde */
+  }
+
+  return entries;
+}
+
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const now = new Date();
 
   const staticRoutes: MetadataRoute.Sitemap = [
@@ -16,13 +60,13 @@ export default function sitemap(): MetadataRoute.Sitemap {
       url: `${siteConfig.siteUrl}/servicios`,
       lastModified: now,
       changeFrequency: "weekly",
-      priority: 0.9,
+      priority: 0.95,
     },
     {
       url: `${siteConfig.siteUrl}/tienda`,
       lastModified: now,
       changeFrequency: "daily",
-      priority: 0.95,
+      priority: 0.9,
     },
     {
       url: `${siteConfig.siteUrl}/consulta`,
@@ -48,8 +92,10 @@ export default function sitemap(): MetadataRoute.Sitemap {
     url: `${siteConfig.siteUrl}/servicios/${service.slug}`,
     lastModified: now,
     changeFrequency: "monthly",
-    priority: 0.85,
+    priority: 0.9,
   }));
 
-  return [...staticRoutes, ...serviceRoutes];
+  const productRoutes = await fetchActiveProductEntries();
+
+  return [...staticRoutes, ...serviceRoutes, ...productRoutes];
 }

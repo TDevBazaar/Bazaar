@@ -4,7 +4,7 @@ import { Plus_Jakarta_Sans, Space_Grotesk } from "next/font/google";
 import { Toaster } from "sonner";
 import { ReferralCapture } from "@/components/store/ReferralCapture";
 import { siteConfig } from "@/data/site";
-import { buildLocalBusinessJsonLd } from "@/lib/seo";
+import { buildLocalBusinessJsonLd, buildWebSiteJsonLd } from "@/lib/seo";
 import "./globals.css";
 
 const plusJakarta = Plus_Jakarta_Sans({
@@ -29,18 +29,29 @@ export const viewport: Viewport = {
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteConfig.siteUrl),
+  applicationName: siteConfig.name,
+  category: "technology",
   title: {
     default: `${siteConfig.name} | ${siteConfig.tagline}`,
-    template: `%s | ${siteConfig.name}`,
+    template: `%s | ${siteConfig.name} Cuba`,
   },
   description: siteConfig.description,
   keywords: [
     "Deve",
-    "desarrollo web Cuba",
-    "tiendas ecommerce La Habana",
-    "catálogo digital WhatsApp",
-    "sistema de reservas online",
+    "Deve Cuba",
+    "DevBazaar",
+    "desarrollo de software en Cuba",
+    "empresa de desarrollo de software Cuba",
     "software a medida Cuba",
+    "desarrollo web Cuba",
+    "soporte técnico en Cuba",
+    "soporte técnico informático Cuba",
+    "tiendas online Cuba",
+    "desarrollo ecommerce Cuba",
+    "catálogo digital WhatsApp Cuba",
+    "sistema de reservas online Cuba",
+    "aplicaciones móviles Android Cuba",
+    "reparación de computadoras Cuba",
     "reparación de laptops La Habana",
     "reparación de celulares 10 de Octubre",
     "mantenimiento de computadoras Cuba",
@@ -48,20 +59,29 @@ export const metadata: Metadata = {
   authors: [{ name: siteConfig.name, url: siteConfig.siteUrl }],
   creator: siteConfig.name,
   publisher: siteConfig.name,
+  formatDetection: {
+    telephone: true,
+    address: true,
+    email: false,
+  },
   alternates: {
     canonical: "/",
+    languages: {
+      "es-CU": "/",
+      es: "/",
+    },
   },
   openGraph: {
     type: "website",
     locale: siteConfig.locale,
     url: siteConfig.siteUrl,
-    siteName: siteConfig.name,
-    title: `${siteConfig.name} — ${siteConfig.tagline}`,
+    siteName: `${siteConfig.name} — Desarrollo de Software y Soporte Técnico en Cuba`,
+    title: `${siteConfig.name} | ${siteConfig.tagline}`,
     description: siteConfig.description,
   },
   twitter: {
     card: "summary_large_image",
-    title: `${siteConfig.name} — ${siteConfig.tagline}`,
+    title: `${siteConfig.name} | ${siteConfig.tagline}`,
     description: siteConfig.description,
   },
   robots: {
@@ -72,6 +92,7 @@ export const metadata: Metadata = {
       follow: true,
       "max-image-preview": "large",
       "max-snippet": -1,
+      "max-video-preview": -1,
     },
   },
   verification: {
@@ -85,10 +106,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   const localBusinessJsonLd = buildLocalBusinessJsonLd();
+  const webSiteJsonLd = buildWebSiteJsonLd();
 
   return (
     <html
-      lang="es"
+      lang={siteConfig.language}
       className={`${plusJakarta.variable} ${spaceGrotesk.variable}`}
     >
       <body className="relative min-h-screen bg-white text-zinc-950 antialiased selection:bg-violet-600/20 selection:text-violet-950">
@@ -105,6 +127,12 @@ export default function RootLayout({
           type="application/ld+json"
           dangerouslySetInnerHTML={{
             __html: JSON.stringify(localBusinessJsonLd),
+          }}
+        />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify(webSiteJsonLd),
           }}
         />
         <Suspense fallback={null}>

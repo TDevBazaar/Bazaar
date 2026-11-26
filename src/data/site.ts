@@ -1,12 +1,14 @@
 export const siteConfig = {
   name: "Deve",
-  tagline: "Desarrollo Web, Software a Medida y Soporte Técnico en La Habana",
+  alternateName: "DevBazaar",
+  tagline: "Desarrollo de Software y Soporte Técnico en Cuba",
   description:
-    "Deve: expertos en desarrollo web, tiendas e-commerce, catálogos digitales, sistemas de reservas y soporte técnico especializado en La Habana, Cuba. Consulta y diagnóstico gratuito en menos de 24 horas.",
+    "Deve: desarrollo de software a medida, web, tiendas online y soporte técnico en Cuba. Atención remota nacional y taller en La Habana. Consulta gratis en 24h.",
   siteUrl: (
-    process.env.NEXT_PUBLIC_SITE_URL || "https://deve.vercel.app"
+    process.env.NEXT_PUBLIC_SITE_URL || "https://deve-blush.vercel.app"
   ).replace(/\/$/, ""),
   locale: "es_CU",
+  language: "es-CU",
   logo: "/brand/logo.webp",
   logoPng: "/brand/logo.png",
   googleSiteVerification: "ZJBgs5uRRdwMXnTWziBzkoM8xVjRimTIMcBDCL9FToc",

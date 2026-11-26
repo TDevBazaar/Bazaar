@@ -171,14 +171,14 @@ export const services: ServiceItem[] = [
     subtitle: "Exhibe tus productos con filtros instantáneos y recibe pedidos por WhatsApp.",
     description:
       "Catálogo web interactivo diseñado para negocios, distribuidores y minoristas que desean mostrar sus ofertas de forma profesional sin perder tiempo enviando decenas de fotos por chat. Incluye búsqueda rápida, filtros por categoría/precio y carga ligera.",
-    seoTitle: "Catálogo Digital Interactivo para Negocios",
+    seoTitle: "Catálogo Digital Interactivo con WhatsApp en Cuba",
     seoDescription:
-      "Muestra tus productos en línea con un catálogo digital interactivo, filtros inteligentes, búsqueda rápida y botón directo de pedido por WhatsApp.",
+      "Muestra tus productos en línea en Cuba con un catálogo digital interactivo, filtros inteligentes, búsqueda rápida y pedidos directos por WhatsApp.",
     seoKeywords: [
-      "catálogo digital interactivo",
+      "catálogo digital Cuba",
       "catálogo web WhatsApp Cuba",
-      "menú digital negocios",
-      "catálogo online profesional",
+      "desarrollo web negocios Cuba",
+      "catálogo online profesional Cuba",
     ],
     thumbnail: "/images/services/catalogo-1.webp",
     coverImage: "/images/services/catalogo-1.webp",
@@ -256,14 +256,14 @@ export const services: ServiceItem[] = [
     subtitle: "Organiza citas, mesas o servicios con disponibilidad en tiempo real.",
     description:
       "Solución digital completa para restaurantes, clínicas, barberías, estudios y servicios profesionales que gestionan citas. Automatiza la agenda, envía confirmaciones y recordatorios, y consulta métricas de ocupación desde cualquier dispositivo.",
-    seoTitle: "Sistema de Reservas y Citas Online a Medida",
+    seoTitle: "Sistema de Reservas y Automatización de Negocios en Cuba",
     seoDescription:
-      "Automatiza reservas para restaurantes, clínicas y negocios con calendario en tiempo real, recordatorios automáticos y panel de gestión.",
+      "Automatiza reservas y citas online en Cuba para restaurantes, clínicas y negocios con calendario en tiempo real, recordatorios y panel de control.",
     seoKeywords: [
-      "sistema de reservas online",
-      "agenda de citas web",
+      "sistema de reservas online Cuba",
+      "agenda de citas web Cuba",
       "automatización de negocios Cuba",
-      "software de reservaciones",
+      "software de reservaciones Cuba",
     ],
     thumbnail: "/images/services/reservas-1.webp",
     coverImage: "/images/services/reservas-1.webp",
@@ -341,14 +341,14 @@ export const services: ServiceItem[] = [
     subtitle: "Arquitectura escalable diseñada exactamente para los procesos de tu negocio.",
     description:
       "Creamos aplicaciones web, móviles (Android) y sistemas internos diseñados desde cero para resolver retos específicos: control de inventario, facturación, CRM, refactorización de sistemas heredados e integraciones API.",
-    seoTitle: "Desarrollo de Software a Medida y Apps Android",
+    seoTitle: "Desarrollo de Software a Medida y Apps Android en Cuba",
     seoDescription:
-      "Desarrollamos aplicaciones web, apps Android y sistemas empresariales a medida, refactorización de código y consultoría tecnológica.",
+      "Empresa de desarrollo de software a medida en Cuba: aplicaciones web, apps Android, sistemas empresariales, integraciones API y consultoría técnica.",
     seoKeywords: [
-      "desarrollo de software a medida Cuba",
-      "programación web y móvil",
-      "aplicaciones Android a medida",
-      "refactorización de software",
+      "desarrollo de software en Cuba",
+      "software a medida Cuba",
+      "aplicaciones Android Cuba",
+      "programación web y móvil Cuba",
     ],
     thumbnail: "/images/services/v2-personalizado.webp",
     coverImage: "/images/services/v2-personalizado.webp",
@@ -426,14 +426,14 @@ export const services: ServiceItem[] = [
     subtitle: "Diagnóstico transparente, soluciones rápidas y garantía real en La Habana.",
     description:
       "Reparación profesional de laptops, computadoras de escritorio y smartphones. Resolvemos fallos de software, sistema operativo, pantallas, baterías, puertos de carga y hardware crítico con diagnóstico inicial gratuito y 90 días de garantía.",
-    seoTitle: "Reparación de Laptops, PCs y Celulares en La Habana",
+    seoTitle: "Reparación de Laptops, PCs y Celulares en Cuba (La Habana)",
     seoDescription:
-      "Servicio técnico especializado en La Habana (10 de Octubre, Luyanó): reparación de laptops, computadoras y celulares con diagnóstico gratis y garantía de 90 días.",
+      "Soporte técnico y reparación de laptops, computadoras y celulares en Cuba (taller en 10 de Octubre, La Habana): diagnóstico gratis y 90 días de garantía.",
     seoKeywords: [
+      "soporte técnico en Cuba",
+      "reparación de computadoras Cuba",
       "reparación de laptops La Habana",
       "reparación de celulares 10 de Octubre",
-      "técnico de computadoras Cuba",
-      "flasheo y desbloqueo de celulares",
     ],
     thumbnail: "/images/services/v2-reparacion.webp",
     coverImage: "/images/services/v2-reparacion.webp",
@@ -520,14 +520,14 @@ export const services: ServiceItem[] = [
     subtitle: "Alarga la vida útil de tus computadoras y elimina sobrecalentamientos y lentitud.",
     description:
       "Servicio profesional de limpieza profunda, cambio de pasta térmica, diagnóstico de disco y memoria, optimización del sistema operativo y actualización de seguridad para equipos personales, oficinas y estudios creativos.",
-    seoTitle: "Mantenimiento de Computadoras y Laptops en La Habana",
+    seoTitle: "Mantenimiento Preventivo de Computadoras y Laptops en Cuba",
     seoDescription:
-      "Limpieza profunda, optimización de rendimiento, antivirus y mantenimiento preventivo para PCs y oficinas en La Habana, Cuba.",
+      "Soporte técnico y mantenimiento preventivo de PCs, laptops y oficinas en Cuba (La Habana): limpieza profunda, pasta térmica, seguridad y optimización.",
     seoKeywords: [
-      "mantenimiento de computadoras La Habana",
-      "limpieza interna laptop Cuba",
-      "optimización de PC",
-      "soporte técnico empresas Habana",
+      "mantenimiento de computadoras Cuba",
+      "soporte técnico empresas Cuba",
+      "limpieza interna laptop La Habana",
+      "optimización de PC Cuba",
     ],
     thumbnail: "/images/services/v2-mantenimiento.webp",
     coverImage: "/images/services/v2-mantenimiento.webp",
@@ -635,14 +635,14 @@ export const services: ServiceItem[] = [
     subtitle: "Deja tu equipo listo para trabajar con drivers, ofimática y seguridad optimizada.",
     description:
       "Configuración integral de tu computadora con todos los controladores oficiales, suite ofimática, herramientas de limpieza y seguridad, optimización del sistema y soporte de instalación sin bloatware ni programas dañinos.",
-    seoTitle: "Instalación de Programas, Drivers y Utilidades PC",
+    seoTitle: "Instalación de Programas, Drivers y Soporte Remoto en Cuba",
     seoDescription:
-      "Configuración completa de PC y laptops: drivers oficiales, antivirus, ofimática y utilidades de optimización para Windows, macOS y Linux.",
+      "Soporte técnico presencial y remoto en Cuba: instalación de drivers oficiales, antivirus, ofimática y optimización para Windows, macOS y Linux.",
     seoKeywords: [
+      "soporte técnico remoto Cuba",
       "instalación de programas y drivers Cuba",
-      "optimización Windows La Habana",
-      "paquete de software PC",
-      "antivirus y limpieza de PC",
+      "optimización Windows Cuba",
+      "antivirus y limpieza de PC Cuba",
     ],
     thumbnail: "/images/services/v2-utilidades.webp",
     coverImage: "/images/services/v2-utilidades.webp",
