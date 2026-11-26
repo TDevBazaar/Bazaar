@@ -1,7 +1,7 @@
 /* ── Cliente del API de POWERGY para la tienda Deve ─────────────
    Comparte infraestructura con el API de POWERGY usando store="deve"
-   (pedidos DE-XXXXXXXX). El catálogo, las categorías y los pedidos
-   viven en el API; el carrito y favoritos se guardan en localStorage. */
+   (pedidos DE-XXXXXXXX). Soporta marketplace multi-vendedor, afiliados
+   por producto y renovación de anuncios cada 24 horas. */
 
 export const STORE_KEY =
   process.env.NEXT_PUBLIC_STORE_KEY?.trim() || "deve";
@@ -17,6 +17,18 @@ export function getPowergyApiServerBase(): string {
 }
 
 /* ── Contratos del API ────────────────────────────────────────── */
+
+export type AffiliateCommissionType = "percent" | "fixed_usd";
+export type AffiliateOrderRouting = "owner" | "affiliate";
+
+export interface ApiProductOwner {
+  id: string;
+  handle: string | null;
+  displayName: string;
+  avatarUrl: string | null;
+  whatsAppPhone: string | null;
+  affiliateOrderRouting: AffiliateOrderRouting;
+}
 
 export interface ApiProduct {
   id: string;
@@ -45,6 +57,17 @@ export interface ApiProduct {
   store: string;
   createdAt: string;
   updatedAt: string;
+  bumped_at?: string;
+  next_renewable_at?: string;
+  can_renew?: boolean;
+  renew_count?: number;
+  allow_affiliates?: boolean;
+  affiliate_commission_type?: AffiliateCommissionType | null;
+  affiliate_commission_value?: number | null;
+  owner_admin_user_id?: string | null;
+  owner?: ApiProductOwner | null;
+  moderated_at?: string | null;
+  moderation_reason?: string | null;
 }
 
 export interface ApiCategory {
@@ -56,6 +79,33 @@ export interface ApiCategory {
   store: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ApiPublicSellerProfile {
+  id: string;
+  handle: string;
+  displayName: string;
+  avatarUrl: string | null;
+  bio: string | null;
+  whatsAppPhone: string | null;
+  affiliateOrderRouting: AffiliateOrderRouting;
+  activeProductCount: number;
+  affiliateEligibleCount: number;
+  affiliatedShowcaseCount: number;
+  joinedAt: string;
+}
+
+export interface ApiPublicSellerDirectoryItem {
+  handle: string;
+  displayName: string;
+  avatarUrl: string | null;
+  activeProductCount: number;
+  lastActivityAt: string | null;
+}
+
+export interface ApiPublicAffiliateShowcase {
+  affiliate: ApiPublicSellerProfile;
+  products: ApiProduct[];
 }
 
 export interface ApiPage<T> {
@@ -88,6 +138,13 @@ export interface ApiOrderLine {
   originalQuantity: number;
   unitPriceUsd: number | null;
   lineTotalUsd: number | null;
+  ownerAdminUserId?: string | null;
+  ownerDisplayName?: string | null;
+  affiliateUserId?: string | null;
+  affiliateHandle?: string | null;
+  affiliateCommissionType?: AffiliateCommissionType | null;
+  affiliateCommissionValue?: number | null;
+  affiliateCommissionUsd?: number | null;
 }
 
 export interface ApiOrder {
@@ -107,6 +164,13 @@ export interface ApiOrder {
   removedItems?: ApiOrderLine[];
   referralCode?: string | null;
   referredByAdminName?: string | null;
+  ownerAdminUserId?: string | null;
+  ownerDisplayName?: string | null;
+  affiliateHandle?: string | null;
+  whatsAppRouting?: string | null;
+  whatsAppRecipientPhone?: string | null;
+  whatsAppRecipientName?: string | null;
+  totalAffiliateCommissionUsd?: number | null;
 }
 
 /* ── Mapeo al modelo de la tienda ─────────────────────────────── */
@@ -118,6 +182,25 @@ export function slugify(value: string): string {
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+export function formatCommissionText(
+  type: AffiliateCommissionType | null | undefined,
+  value: number | null | undefined,
+  effectivePriceUsd?: number
+): string | null {
+  if (!type || typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return null;
+  }
+  if (type === "percent") {
+    const cleanPct = Number.isInteger(value) ? `${value}%` : `${value.toFixed(1)}%`;
+    if (effectivePriceUsd && effectivePriceUsd > 0) {
+      const est = Math.round(effectivePriceUsd * value) / 100;
+      return `${cleanPct} (~$${est.toFixed(2)} USD)`;
+    }
+    return `${cleanPct}`;
+  }
+  return `$${value % 1 === 0 ? value.toFixed(0) : value.toFixed(2)} USD`;
 }
 
 export interface CategoryView {
@@ -158,6 +241,17 @@ export interface ProductView {
   topRank: number | null;
   isActive: boolean;
   createdAt: string;
+  bumpedAt: string;
+  nextRenewableAt: string | null;
+  canRenew: boolean;
+  renewCount: number;
+  allowAffiliates: boolean;
+  affiliateCommissionType: AffiliateCommissionType | null;
+  affiliateCommissionValue: number | null;
+  ownerAdminUserId: string | null;
+  owner: ApiProductOwner | null;
+  moderatedAt: string | null;
+  moderationReason: string | null;
 }
 
 export type CategoryMap = Map<string, { slug: string; name: string }>;
@@ -222,6 +316,21 @@ export function mapProduct(
     topRank: product.top_rank,
     isActive: product.isActive,
     createdAt: product.createdAt,
+    bumpedAt: product.bumped_at ?? product.createdAt,
+    nextRenewableAt: product.next_renewable_at ?? null,
+    canRenew: Boolean(product.can_renew),
+    renewCount: product.renew_count ?? 0,
+    allowAffiliates: Boolean(product.allow_affiliates),
+    affiliateCommissionType: product.allow_affiliates
+      ? (product.affiliate_commission_type ?? null)
+      : null,
+    affiliateCommissionValue: product.allow_affiliates
+      ? (product.affiliate_commission_value ?? null)
+      : null,
+    ownerAdminUserId: product.owner_admin_user_id ?? product.owner?.id ?? null,
+    owner: product.owner ?? null,
+    moderatedAt: product.moderated_at ?? null,
+    moderationReason: product.moderation_reason ?? null,
   };
 }
 
@@ -290,14 +399,20 @@ export async function apiSend<T>(
   return (await response.json()) as T;
 }
 
-export async function fetchStoreCategories(
+export async function fetchStoreCategoriesRaw(
   signal?: AbortSignal
-): Promise<CategoryView[]> {
-  const categories = await apiGet<ApiCategory[]>(
+): Promise<ApiCategory[]> {
+  return apiGet<ApiCategory[]>(
     `categories?store=${encodeURIComponent(STORE_KEY)}`,
     undefined,
     signal
   );
+}
+
+export async function fetchStoreCategories(
+  signal?: AbortSignal
+): Promise<CategoryView[]> {
+  const categories = await fetchStoreCategoriesRaw(signal);
   return categories.map(mapCategory);
 }
 
@@ -307,7 +422,9 @@ export interface ProductQueryOptions {
   maxPrice?: number;
   onSale?: boolean;
   featured?: boolean;
-  sort?: "destacados" | "precio-asc" | "precio-desc" | "nuevos";
+  allowAffiliates?: boolean;
+  ownerHandle?: string;
+  sort?: "recientes" | "destacados" | "precio-asc" | "precio-desc" | "nuevos";
   page?: number;
   pageSize?: number;
   cursor?: string | null;
@@ -332,6 +449,12 @@ function buildProductSearchParams(opts: ProductQueryOptions): URLSearchParams {
   }
   if (opts.onSale) params.set("onSale", "true");
   if (opts.featured !== undefined) params.set("featured", String(opts.featured));
+  if (opts.allowAffiliates !== undefined) {
+    params.set("allowAffiliates", String(opts.allowAffiliates));
+  }
+  if (opts.ownerHandle?.trim()) {
+    params.set("ownerHandle", opts.ownerHandle.trim());
+  }
   if (opts.sort) params.set("sort", opts.sort);
 
   return params;
@@ -387,6 +510,46 @@ export async function fetchCatalogMeta(
     undefined,
     signal
   );
+}
+
+export async function fetchPublicSellerProfile(
+  handle: string,
+  signal?: AbortSignal
+): Promise<ApiPublicSellerProfile | null> {
+  try {
+    return await apiGet<ApiPublicSellerProfile>(
+      `sellers/public/${encodeURIComponent(handle.trim())}?store=${encodeURIComponent(STORE_KEY)}`,
+      undefined,
+      signal
+    );
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null;
+    throw error;
+  }
+}
+
+export async function fetchPublicAffiliateShowcase(
+  handle: string,
+  categoriesById: CategoryMap = new Map(),
+  signal?: AbortSignal
+): Promise<{
+  affiliate: ApiPublicSellerProfile;
+  products: ProductView[];
+} | null> {
+  try {
+    const raw = await apiGet<ApiPublicAffiliateShowcase>(
+      `affiliates/public/${encodeURIComponent(handle.trim())}?store=${encodeURIComponent(STORE_KEY)}`,
+      undefined,
+      signal
+    );
+    return {
+      affiliate: raw.affiliate,
+      products: raw.products.map((item) => mapProduct(item, categoriesById)),
+    };
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null;
+    throw error;
+  }
 }
 
 /** Busca un producto por slug (primario en URLs /tienda/[slug]) con respaldo por ID */

@@ -55,6 +55,7 @@ function mergeProducts(
     if (
       !prev ||
       prev.createdAt !== item.createdAt ||
+      prev.bumpedAt !== item.bumpedAt ||
       prev.price !== item.price ||
       prev.originalPrice !== item.originalPrice ||
       prev.discountPercent !== item.discountPercent ||
@@ -64,7 +65,12 @@ function mergeProducts(
       prev.invoice !== item.invoice ||
       prev.image !== item.image ||
       prev.name !== item.name ||
-      prev.category !== item.category
+      prev.category !== item.category ||
+      prev.allowAffiliates !== item.allowAffiliates ||
+      prev.affiliateCommissionType !== item.affiliateCommissionType ||
+      prev.affiliateCommissionValue !== item.affiliateCommissionValue ||
+      prev.owner?.handle !== item.owner?.handle ||
+      prev.owner?.whatsAppPhone !== item.owner?.whatsAppPhone
     ) {
       next[item.id] = item;
       changed = true;

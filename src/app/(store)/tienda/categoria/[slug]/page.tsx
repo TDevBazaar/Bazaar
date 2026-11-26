@@ -83,7 +83,7 @@ export default async function TiendaCategoriaPage({
   const categoryName = matched?.name ?? humanizeSlug(cleanSlug);
 
   const initialPage = await fetchStoreProductsServer(
-    { categories: [cleanSlug], page: 1, pageSize: 20, sort: "destacados" },
+    { categories: [cleanSlug], page: 1, pageSize: 20, sort: "recientes" },
     initialCategories
   );
 

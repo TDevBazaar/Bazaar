@@ -5,8 +5,10 @@ import Link from "next/link";
 import {
   CheckCircle2,
   ClipboardList,
+  Handshake,
   MessageCircle,
   ShoppingBag,
+  Store,
 } from "lucide-react";
 import {
   ImagePreviewModal,
@@ -25,17 +27,33 @@ import {
   buildOrderPreviewPath,
 } from "@/lib/store/order-preview";
 import { STORE_KEY, apiSend, type ApiOrder } from "@/lib/store/powergy-api";
-import { resolveActiveReferralForCheckout } from "@/lib/store/referral";
+import {
+  readStoredReferral,
+  resolveActiveReferralForCheckout,
+} from "@/lib/store/referral";
 import type { CartLine, OrderSummary } from "@/lib/store/types";
 import { buildStoreWhatsAppUrl } from "@/lib/store/whatsapp";
 
+interface SellerOrderGroup {
+  key: string;
+  sellerName: string;
+  sellerHandle: string | null;
+  sellerPhone: string | null;
+  lines: CartLine[];
+  subtotal: number;
+}
+
 function buildWhatsAppMessage(
-  reference: string,
+  order: ApiOrder,
   lines: CartLine[],
   subtotal: number,
   previewUrl: string,
   adminUrl: string
 ): string {
+  const greetingName =
+    order.whatsAppRecipientName?.trim() ||
+    order.ownerDisplayName?.trim() ||
+    "Deve";
   const detalle = lines
     .map(
       (l) =>
@@ -45,10 +63,23 @@ function buildWhatsAppMessage(
     )
     .join("\n");
 
+  const extraAffiliateLines: string[] = [];
+  if (order.affiliateHandle) {
+    const commText =
+      typeof order.totalAffiliateCommissionUsd === "number" &&
+      order.totalAffiliateCommissionUsd > 0
+        ? ` (Comisión estimada: ${formatPrice(order.totalAffiliateCommissionUsd)})`
+        : "";
+    extraAffiliateLines.push(
+      `🤝 Referido por afiliado: @${order.affiliateHandle}${commText}`
+    );
+  }
+
   return [
-    "Hola Deve, quiero confirmar este pedido de la tienda.",
+    `Hola ${greetingName}, quiero confirmar este pedido de Deve Tienda.`,
     "",
-    `📋 Pedido: ${reference}`,
+    `📋 Pedido: ${order.reference}`,
+    ...extraAffiliateLines,
     "",
     "Artículos:",
     detalle,
@@ -60,7 +91,7 @@ function buildWhatsAppMessage(
     "🖼️ Vista previa con fotos:",
     previewUrl,
     "",
-    "🔗 Enlace directo al pedido (Admin):",
+    "🔗 Enlace directo al pedido (Panel):",
     adminUrl,
   ].join("\n");
 }
@@ -68,17 +99,41 @@ function buildWhatsAppMessage(
 export function CheckoutClient() {
   const { lines, pending } = useCartLinesState();
   const clearCart = useShopStore((s) => s.clearCart);
-  const [confirmed, setConfirmed] = useState<OrderSummary | null>(null);
-  const [whatsappLink, setWhatsappLink] = useState("");
-  const [confirmedPhone, setConfirmedPhone] = useState<string | null>(null);
+  const [confirmedOrders, setConfirmedOrders] = useState<OrderSummary[]>([]);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
   const [previewImage, setPreviewImage] = useState<PreviewImageData | null>(
     null
   );
+  const [activeAffiliateHandle, setActiveAffiliateHandle] = useState<
+    string | null
+  >(null);
 
   const subtotal = cartSubtotal(lines);
   const unpriced = hasUnpricedLines(lines);
+
+  // Agrupa automáticamente los artículos por vendedor (1 pedido y 1 botón WA por vendedor)
+  const sellerGroups = useMemo<SellerOrderGroup[]>(() => {
+    const map = new Map<string, SellerOrderGroup>();
+    for (const line of lines) {
+      const ownerId = line.product.owner?.id ?? line.product.ownerAdminUserId ?? "deve-default";
+      const existing = map.get(ownerId);
+      if (existing) {
+        existing.lines.push(line);
+        existing.subtotal += line.lineTotal;
+      } else {
+        map.set(ownerId, {
+          key: ownerId,
+          sellerName: line.product.owner?.displayName ?? "Deve Tienda",
+          sellerHandle: line.product.owner?.handle ?? null,
+          sellerPhone: line.product.owner?.whatsAppPhone ?? null,
+          lines: [line],
+          subtotal: line.lineTotal,
+        });
+      }
+    }
+    return Array.from(map.values());
+  }, [lines]);
 
   const previewItems = useMemo(
     () =>
@@ -99,71 +154,105 @@ export function CheckoutClient() {
       ? buildOrderPreviewImagePath("warmup", previewItems)
       : "";
 
-  // Pre-calienta el generador Open Graph mientras el usuario revisa el resumen
   useEffect(() => {
-    if (confirmed || !warmupPath) return;
+    if (confirmedOrders.length > 0 || !warmupPath) return;
     const controller = new AbortController();
     void fetch(warmupPath, { signal: controller.signal }).catch(() => {});
     return () => controller.abort();
-  }, [confirmed, warmupPath]);
+  }, [confirmedOrders.length, warmupPath]);
 
-  // Refresca el teléfono del vendedor referido (?v=) antes de confirmar
   useEffect(() => {
-    if (confirmed || lines.length === 0) return;
-    void resolveActiveReferralForCheckout(1500);
-  }, [confirmed, lines.length]);
+    if (confirmedOrders.length > 0 || lines.length === 0) return;
+    let active = true;
+    resolveActiveReferralForCheckout(1500)
+      .then((ref) => {
+        if (!active) return;
+        const current = ref ?? readStoredReferral();
+        if (current?.kind === "affiliate") {
+          setActiveAffiliateHandle(current.code);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [confirmedOrders.length, lines.length]);
 
-  if (confirmed) {
+  if (confirmedOrders.length > 0) {
+    const isMulti = confirmedOrders.length > 1;
     return (
-      <div className="mx-auto max-w-xl px-4 pb-20 pt-10 text-center sm:px-6">
+      <div className="mx-auto max-w-2xl px-4 pb-20 pt-10 text-center sm:px-6">
         <div className="rounded-3xl border border-zinc-200 bg-white p-7 shadow-xs sm:p-10">
           <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
             <CheckCircle2 className="h-9 w-9" />
           </span>
           <h1 className="mt-5 font-display text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl">
-            ¡Pedido registrado!
+            {isMulti
+              ? `¡${confirmedOrders.length} pedidos registrados!`
+              : "¡Pedido registrado!"}
           </h1>
           <p className="mt-3 text-sm leading-relaxed text-zinc-600">
-            Tu pedido{" "}
-            <span className="font-mono font-bold text-zinc-950">
-              {confirmed.id}
-            </span>{" "}
-            quedó registrado. Te estamos redirigiendo a WhatsApp para confirmar
-            disponibilidad, pago y entrega…
+            {isMulti
+              ? "Como tu carrito incluía artículos de distintos vendedores, dividimos tu compra automáticamente. Envía cada pedido por WhatsApp tocando su botón correspondiente:"
+              : `Tu pedido ${confirmedOrders[0].id} quedó registrado. Continúa en WhatsApp para confirmar disponibilidad, pago y entrega.`}
           </p>
 
-          <div className="mt-6 rounded-2xl border border-zinc-200/80 bg-zinc-50 p-4 text-left text-sm">
-            <div className="flex items-baseline justify-between gap-3">
-              <span className="text-zinc-600">Artículos</span>
-              <span className="font-semibold text-zinc-950 tabular-nums">
-                {confirmed.items.reduce((a, i) => a + i.qty, 0)}
-              </span>
-            </div>
-            <div className="mt-1.5 flex items-baseline justify-between gap-3">
-              <span className="text-zinc-600">Entrega / envío</span>
-              <span className="text-xs font-semibold text-violet-700">
-                Confirmación por WhatsApp
-              </span>
-            </div>
-            <div className="mt-1.5 flex items-baseline justify-between gap-3">
-              <span className="text-zinc-600">Total estimado</span>
-              <span className="font-bold text-zinc-950 tabular-nums">
-                {formatPrice(confirmed.total)}
-              </span>
-            </div>
+          <div className="mt-6 space-y-4 text-left">
+            {confirmedOrders.map((order) => (
+              <div
+                key={order.id}
+                className="rounded-2xl border border-zinc-200 bg-zinc-50/80 p-4"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-sm font-bold text-zinc-950">
+                      {order.id}
+                    </span>
+                    {order.sellerName && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-0.5 text-xs font-semibold text-zinc-700 ring-1 ring-zinc-200">
+                        <Store className="h-3 w-3 text-violet-600" />
+                        {order.sellerName}
+                      </span>
+                    )}
+                  </div>
+                  <span className="font-display text-base font-bold text-zinc-950 tabular-nums">
+                    {formatPrice(order.total)}
+                  </span>
+                </div>
+
+                {order.affiliateHandle && (
+                  <p className="mt-2 inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-900">
+                    <Handshake className="h-3 w-3" />
+                    Afiliado acreditado: @{order.affiliateHandle}
+                    {order.whatsappRouting === "affiliate"
+                      ? " (atención directa por afiliado)"
+                      : ""}
+                  </p>
+                )}
+
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <a
+                    href={order.whatsappUrl || buildStoreWhatsAppUrl("Hola Deve")}
+                    target={isMulti ? "_blank" : undefined}
+                    rel={isMulti ? "noopener noreferrer" : undefined}
+                    className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-full bg-emerald-600 px-5 text-xs font-semibold text-white shadow-xs transition hover:bg-emerald-700 sm:flex-none"
+                  >
+                    <MessageCircle className="h-4 w-4" />
+                    Enviar a {order.whatsappRecipientName || order.sellerName || "WhatsApp"}
+                  </a>
+                  <Link
+                    href={`/tienda/admin?order=${encodeURIComponent(order.id)}`}
+                    className="inline-flex h-10 items-center gap-1 rounded-full border border-zinc-200 bg-white px-3.5 text-xs font-semibold text-zinc-600 hover:text-violet-700"
+                  >
+                    <ClipboardList className="h-3.5 w-3.5" />
+                    Panel
+                  </Link>
+                </div>
+              </div>
+            ))}
           </div>
 
-          <div className="mt-7 flex flex-col gap-2.5 sm:flex-row sm:justify-center">
-            <a
-              href={
-                whatsappLink ||
-                buildStoreWhatsAppUrl("Hola Deve, acabo de registrar un pedido.", confirmedPhone)
-              }
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-emerald-600 px-6 text-sm font-semibold text-white shadow-sm shadow-emerald-600/25 transition hover:bg-emerald-700"
-            >
-              <MessageCircle className="h-4 w-4" />
-              Continuar en WhatsApp
-            </a>
+          <div className="mt-7 flex justify-center">
             <Link
               href="/tienda"
               className="inline-flex h-11 items-center justify-center rounded-full border border-zinc-200 bg-white px-6 text-sm font-semibold text-zinc-800 transition hover:bg-zinc-50"
@@ -171,14 +260,6 @@ export function CheckoutClient() {
               Seguir comprando
             </Link>
           </div>
-
-          <Link
-            href={`/tienda/admin?order=${encodeURIComponent(confirmed.id)}`}
-            className="mt-5 inline-flex items-center gap-1.5 text-xs font-medium text-zinc-500 transition hover:text-violet-700"
-          >
-            <ClipboardList className="h-3.5 w-3.5" />
-            Ver pedido #{confirmed.id} en el panel Admin
-          </Link>
         </div>
       </div>
     );
@@ -218,9 +299,9 @@ export function CheckoutClient() {
 
   const handleConfirm = async (e: FormEvent) => {
     e.preventDefault();
-    if (lines.length > MAX_ORDER_LINES) {
+    if (sellerGroups.some((g) => g.lines.length > MAX_ORDER_LINES)) {
       setSendError(
-        `Cada pedido admite hasta ${MAX_ORDER_LINES} artículos distintos. Ajusta tu carrito antes de continuar.`
+        `Cada pedido admite hasta ${MAX_ORDER_LINES} artículos distintos por vendedor. Ajusta tu carrito antes de continuar.`
       );
       return;
     }
@@ -229,67 +310,105 @@ export function CheckoutClient() {
     setSendError("");
     try {
       const referral = await resolveActiveReferralForCheckout(1500);
-      const respuesta = await apiSend<ApiOrder>("orders", {
-        method: "POST",
-        body: {
-          store: STORE_KEY,
-          idempotencyKey: crypto.randomUUID(),
-          referralCode: referral?.code || undefined,
-          items: lines.map((l) => ({
-            productId: l.productId,
-            quantity: l.qty,
-          })),
-        },
-      });
-
       const origin = typeof window !== "undefined" ? window.location.origin : "";
-      const previewUrl = `${origin}${buildOrderPreviewPath(
-        respuesta.reference,
-        previewItems
-      )}`;
-      const ogImageUrl = `${origin}${buildOrderPreviewImagePath(
-        respuesta.reference,
-        previewItems
-      )}`;
-      const adminUrl = `${origin}/tienda/admin?order=${encodeURIComponent(
-        respuesta.reference
-      )}`;
+      const createdSummaries: OrderSummary[] = [];
+      const warmupFetches: Promise<Response>[] = [];
 
-      const order: OrderSummary = {
-        id: respuesta.reference,
-        items: lines.map((l) => ({ productId: l.productId, qty: l.qty })),
-        subtotal,
-        total: subtotal,
-        status: respuesta.status,
-        createdAt: respuesta.createdAt,
-      };
+      for (const group of sellerGroups) {
+        const respuesta = await apiSend<ApiOrder>("orders", {
+          method: "POST",
+          body: {
+            store: STORE_KEY,
+            idempotencyKey: crypto.randomUUID(),
+            affiliateHandle:
+              referral?.kind === "affiliate" ? referral.code : undefined,
+            referralCode:
+              referral?.kind === "legacy" ? referral.code : undefined,
+            items: group.lines.map((l) => ({
+              productId: l.productId,
+              quantity: l.qty,
+            })),
+          },
+        });
 
-      const mensaje = buildWhatsAppMessage(
-        respuesta.reference,
-        lines,
-        subtotal,
-        previewUrl,
-        adminUrl
-      );
-      const sellerPhone = referral?.whatsAppPhone ?? null;
-      setConfirmedPhone(sellerPhone);
-      const urlWa = buildStoreWhatsAppUrl(mensaje, sellerPhone);
-      setWhatsappLink(urlWa);
+        const groupPreviewItems = group.lines.map((l) => ({
+          productId: l.productId,
+          qty: l.qty,
+          name: l.product.name,
+          price: l.product.price,
+          image: l.product.images[0] || l.product.image,
+          categoryName: l.product.categoryName,
+          slug: l.product.slug,
+        }));
+
+        const previewUrl = `${origin}${buildOrderPreviewPath(
+          respuesta.reference,
+          groupPreviewItems
+        )}`;
+        const ogImageUrl = `${origin}${buildOrderPreviewImagePath(
+          respuesta.reference,
+          groupPreviewItems
+        )}`;
+        const adminUrl = `${origin}/tienda/admin?order=${encodeURIComponent(
+          respuesta.reference
+        )}`;
+
+        const mensaje = buildWhatsAppMessage(
+          respuesta,
+          group.lines,
+          group.subtotal,
+          previewUrl,
+          adminUrl
+        );
+
+        const recipientPhone =
+          respuesta.whatsAppRecipientPhone ??
+          (referral?.kind === "legacy" ? referral.whatsAppPhone : null) ??
+          group.sellerPhone ??
+          null;
+
+        const whatsappUrl = buildStoreWhatsAppUrl(mensaje, recipientPhone);
+        warmupFetches.push(fetch(previewUrl), fetch(ogImageUrl));
+
+        createdSummaries.push({
+          id: respuesta.reference,
+          items: group.lines.map((l) => ({
+            productId: l.productId,
+            qty: l.qty,
+          })),
+          subtotal: group.subtotal,
+          total: group.subtotal,
+          status: respuesta.status,
+          createdAt: respuesta.createdAt,
+          sellerName: respuesta.ownerDisplayName ?? group.sellerName,
+          whatsappUrl,
+          whatsappRouting: respuesta.whatsAppRouting ?? null,
+          whatsappRecipientName:
+            respuesta.whatsAppRecipientName ??
+            respuesta.ownerDisplayName ??
+            group.sellerName,
+          affiliateHandle: respuesta.affiliateHandle ?? null,
+          totalAffiliateCommissionUsd:
+            respuesta.totalAffiliateCommissionUsd ?? null,
+        });
+      }
 
       clearCart();
-      setConfirmed(order);
+      setConfirmedOrders(createdSummaries);
       window.scrollTo({ top: 0 });
 
-      // Pre-cachea la vista previa visual y su imagen PNG antes de abrir WhatsApp
       await Promise.race([
-        Promise.allSettled([fetch(previewUrl), fetch(ogImageUrl)]),
+        Promise.allSettled(warmupFetches),
         new Promise<void>((resolve) => setTimeout(resolve, 1100)),
       ]);
 
-      try {
-        window.location.assign(urlWa);
-      } catch {
-        /* El usuario dispone del botón manual */
+      // Si es un solo vendedor, abrimos WhatsApp automáticamente; si son varios, el comprador elige cada botón.
+      if (createdSummaries.length === 1 && createdSummaries[0].whatsappUrl) {
+        try {
+          window.location.assign(createdSummaries[0].whatsappUrl);
+        } catch {
+          /* Botón manual disponible */
+        }
       }
     } catch (error) {
       setSendError(
@@ -314,88 +433,120 @@ export function CheckoutClient() {
           Confirmar pedido
         </h1>
         <p className="mt-2 text-sm leading-relaxed text-zinc-600">
-          Revisa tu selección y confirma para generar tu referencia{" "}
-          <span className="font-mono font-semibold text-zinc-900">DE-…</span> y
-          continuar por WhatsApp con vista previa de fotos.
+          {sellerGroups.length > 1
+            ? `Tu carrito incluye productos de ${sellerGroups.length} vendedores distintos. Generaremos una referencia DE-… y su botón de WhatsApp separado para cada vendedor.`
+            : "Revisa tu selección y confirma para generar tu referencia DE-… y continuar por WhatsApp con vista previa de fotos."}
         </p>
       </header>
 
       <form onSubmit={handleConfirm} noValidate>
         <section className="rounded-3xl border border-zinc-200 bg-white p-5 shadow-xs sm:p-6">
-          <div className="flex items-baseline justify-between gap-3">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
             <h2 className="font-display text-base font-bold text-zinc-950">
               Tu selección
             </h2>
-            <span className="text-xs font-semibold text-zinc-500">
-              {totalQty} {totalQty === 1 ? "artículo" : "artículos"}
-            </span>
+            <div className="flex items-center gap-2">
+              {activeAffiliateHandle && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-800">
+                  <Handshake className="h-3 w-3" />
+                  Afiliado @{activeAffiliateHandle}
+                </span>
+              )}
+              <span className="text-xs font-semibold text-zinc-500">
+                {totalQty} {totalQty === 1 ? "artículo" : "artículos"}
+              </span>
+            </div>
           </div>
 
-          <ul className="mt-4 max-h-96 space-y-3 overflow-y-auto pt-1.5 pr-1">
-            {lines.map((l) => {
-              const hasDiscount =
-                l.product.onSale &&
-                l.product.discountPercent !== null &&
-                l.product.discountPercent > 0 &&
-                l.product.price > 0 &&
-                l.product.originalPrice > l.product.price;
-
-              return (
-                <li
-                  key={l.productId}
-                  className="flex min-w-0 items-center gap-3"
-                >
-                  <span className="relative shrink-0">
-                    <ZoomableThumb
-                      src={l.product.images[0]}
-                      alt={l.product.name}
-                      onPreview={setPreviewImage}
-                      priority
-                      className="h-16 w-16 rounded-xl"
-                    />
-                    <span className="pointer-events-none absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#6018F8] px-1 text-[10px] font-bold text-white shadow-xs">
-                      {l.qty}
-                    </span>
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="line-clamp-2 break-words text-sm font-semibold leading-snug text-zinc-950">
-                      {l.product.name}
-                    </span>
-                    <span className="mt-0.5 block truncate text-xs text-zinc-500">
-                      {l.product.categoryName}
-                    </span>
-                  </span>
-                  <span className="shrink-0 text-right">
-                    {hasDiscount ? (
-                      <>
-                        <span className="block text-sm font-bold text-rose-600 tabular-nums">
-                          {formatPriceLabel(l.lineTotal)}
-                        </span>
-                        <span className="mt-0.5 flex items-center justify-end gap-1 text-[10.5px]">
-                          <span className="text-zinc-400 line-through tabular-nums">
-                            {formatPrice(l.product.originalPrice * l.qty)}
-                          </span>
-                          <span className="rounded-full bg-rose-100 px-1.5 py-0.5 font-bold text-rose-700 tabular-nums">
-                            -{l.product.discountPercent}%
-                          </span>
-                        </span>
-                      </>
-                    ) : (
-                      <span className="text-sm font-bold text-zinc-950 tabular-nums">
-                        {formatPriceLabel(l.lineTotal)}
+          <div className="mt-4 space-y-5">
+            {sellerGroups.map((group) => (
+              <div
+                key={group.key}
+                className="rounded-2xl border border-zinc-200/80 bg-zinc-50/40 p-3.5"
+              >
+                <div className="mb-3 flex items-center justify-between gap-2 border-b border-zinc-200/70 pb-2">
+                  <span className="inline-flex items-center gap-1.5 text-xs font-bold text-zinc-900">
+                    <Store className="h-3.5 w-3.5 text-[#6018F8]" />
+                    {group.sellerName}
+                    {group.sellerHandle && (
+                      <span className="font-mono text-[11px] font-normal text-zinc-500">
+                        @{group.sellerHandle}
                       </span>
                     )}
                   </span>
-                </li>
-              );
-            })}
-          </ul>
+                  <span className="text-xs font-bold text-zinc-800 tabular-nums">
+                    {formatPrice(group.subtotal)}
+                  </span>
+                </div>
+
+                <ul className="space-y-3">
+                  {group.lines.map((l) => {
+                    const hasDiscount =
+                      l.product.onSale &&
+                      l.product.discountPercent !== null &&
+                      l.product.discountPercent > 0 &&
+                      l.product.price > 0 &&
+                      l.product.originalPrice > l.product.price;
+
+                    return (
+                      <li
+                        key={l.productId}
+                        className="flex min-w-0 items-center gap-3"
+                      >
+                        <span className="relative shrink-0">
+                          <ZoomableThumb
+                            src={l.product.images[0]}
+                            alt={l.product.name}
+                            onPreview={setPreviewImage}
+                            priority
+                            className="h-14 w-14 rounded-xl"
+                          />
+                          <span className="pointer-events-none absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#6018F8] px-1 text-[10px] font-bold text-white shadow-xs">
+                            {l.qty}
+                          </span>
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="line-clamp-2 break-words text-sm font-semibold leading-snug text-zinc-950">
+                            {l.product.name}
+                          </span>
+                          <span className="mt-0.5 block truncate text-xs text-zinc-500">
+                            {l.product.categoryName}
+                          </span>
+                        </span>
+                        <span className="shrink-0 text-right">
+                          {hasDiscount ? (
+                            <>
+                              <span className="block text-sm font-bold text-rose-600 tabular-nums">
+                                {formatPriceLabel(l.lineTotal)}
+                              </span>
+                              <span className="mt-0.5 flex items-center justify-end gap-1 text-[10.5px]">
+                                <span className="text-zinc-400 line-through tabular-nums">
+                                  {formatPrice(l.product.originalPrice * l.qty)}
+                                </span>
+                                <span className="rounded-full bg-rose-100 px-1.5 py-0.5 font-bold text-rose-700 tabular-nums">
+                                  -{l.product.discountPercent}%
+                                </span>
+                              </span>
+                            </>
+                          ) : (
+                            <span className="text-sm font-bold text-zinc-950 tabular-nums">
+                              {formatPriceLabel(l.lineTotal)}
+                            </span>
+                          )}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))}
+          </div>
 
           <hr className="my-4 border-zinc-200" />
 
           <div className="space-y-2 text-sm">
             <div className="flex items-baseline justify-between gap-3">
-              <span className="text-zinc-600">Subtotal</span>
+              <span className="text-zinc-600">Subtotal general</span>
               <span className="font-semibold text-zinc-950 tabular-nums">
                 {formatPrice(subtotal)}
               </span>
@@ -434,7 +585,11 @@ export function CheckoutClient() {
             className="mt-6 inline-flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#6018F8] px-6 text-sm font-semibold text-white shadow-md shadow-violet-600/25 transition hover:bg-[#5010E8] disabled:cursor-not-allowed disabled:opacity-60"
           >
             <MessageCircle className="h-4 w-4" />
-            {sending ? "Registrando pedido…" : "Confirmar y abrir WhatsApp"}
+            {sending
+              ? "Registrando pedido…"
+              : sellerGroups.length > 1
+                ? `Confirmar ${sellerGroups.length} pedidos`
+                : "Confirmar y abrir WhatsApp"}
           </button>
 
           <Link

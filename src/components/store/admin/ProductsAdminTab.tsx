@@ -3,14 +3,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  ArrowUpCircle,
+  Clock,
   Eye,
   EyeOff,
   FileText,
+  Handshake,
   ImageDown,
   Loader2,
   Pencil,
   Plus,
+  RefreshCw,
   Search,
+  ShieldAlert,
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
@@ -31,6 +36,7 @@ import {
   createProduct,
   deactivateProduct,
   fetchAdminProducts,
+  renewProducts,
   updateProduct,
   type AdminProductSort,
   type AdminProductVisibility,
@@ -52,7 +58,9 @@ import {
 } from "@/lib/store/image-upload";
 import {
   STORE_KEY,
+  formatCommissionText,
   slugify,
+  type AffiliateCommissionType,
   type ApiCategory,
   type ApiProduct,
 } from "@/lib/store/powergy-api";
@@ -77,6 +85,9 @@ interface ProductForm {
   invoice: boolean;
   topVentas: boolean;
   active: boolean;
+  allowAffiliates: boolean;
+  affiliateCommissionType: AffiliateCommissionType;
+  affiliateCommissionValue: string;
 }
 
 const emptyProduct: ProductForm = {
@@ -96,28 +107,61 @@ const emptyProduct: ProductForm = {
   invoice: false,
   topVentas: false,
   active: true,
+  allowAffiliates: false,
+  affiliateCommissionType: "percent",
+  affiliateCommissionValue: "10",
 };
 
 interface ProductsAdminTabProps {
   token: string;
   supabase: SupabaseClient | null;
   categories: ApiCategory[];
+  isSuperAdmin: boolean;
+  isSuspended: boolean;
+  storageFolder: string;
   refreshTick: number;
   onMutated: () => void;
   onTotalUpdated: (total: number) => void;
   onImagesDiscovered: (entries: Record<string, string>) => void;
   onPreviewImage: (image: PreviewImageData) => void;
-  onGoToCategories: () => void;
+  onGoToCategories?: () => void;
 }
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Ocurrió un error inesperado.";
 }
 
+function getRenewalStatus(
+  p: ApiProduct,
+  nowMs: number
+): { canRenew: boolean; label: string } {
+  if (!p.isActive || p.moderated_at) {
+    return { canRenew: false, label: "No renovable" };
+  }
+  const nextRaw = p.next_renewable_at;
+  if (!nextRaw) {
+    return { canRenew: Boolean(p.can_renew), label: "Listo para renovar" };
+  }
+  const nextMs = new Date(nextRaw).getTime();
+  if (!Number.isFinite(nextMs) || nextMs <= nowMs) {
+    return { canRenew: true, label: "Listo para renovar" };
+  }
+  const diffMin = Math.max(1, Math.ceil((nextMs - nowMs) / 60000));
+  const hours = Math.floor(diffMin / 60);
+  const mins = diffMin % 60;
+  return {
+    canRenew: false,
+    label: hours > 0 ? `Disponible en ${hours}h ${mins}m` : `Disponible en ${mins}m`,
+  };
+}
+
 export function ProductsAdminTab({
   token,
   supabase,
   categories,
+  isSuperAdmin,
+  isSuspended,
+  storageFolder,
   refreshTick,
   onMutated,
   onTotalUpdated,
@@ -133,6 +177,11 @@ export function ProductsAdminTab({
   const [errorMsg, setErrorMsg] = useState("");
   const [togglingId, setTogglingId] = useState<string | null>(null);
 
+  // Selección y renovación 24h
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [renewingMode, setRenewingMode] = useState<string | null>(null);
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
+
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [visibility, setVisibility] = useState<AdminProductVisibility>("all");
@@ -140,10 +189,10 @@ export function ProductsAdminTab({
   const [priceFilter, setPriceFilter] = useState<"all" | "priced" | "unpriced">(
     "all"
   );
-  const [tagFilter, setTagFilter] = useState<"all" | "onSale" | "featured">(
-    "all"
-  );
-  const [sort, setSort] = useState<AdminProductSort>("destacados");
+  const [tagFilter, setTagFilter] = useState<
+    "all" | "onSale" | "featured" | "affiliates"
+  >("all");
+  const [sort, setSort] = useState<AdminProductSort>("recientes");
   const [showFilters, setShowFilters] = useState(false);
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -164,6 +213,11 @@ export function ProductsAdminTab({
     bytes: number;
     contentType: string;
   } | null>(null);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setNowMs(Date.now()), 60000);
+    return () => window.clearInterval(interval);
+  }, []);
 
   const activeCategories = useMemo(
     () => categories.filter((c) => c.isActive),
@@ -209,6 +263,7 @@ export function ProductsAdminTab({
             : undefined,
       onSale: tagFilter === "onSale" ? true : undefined,
       featured: tagFilter === "featured" ? true : undefined,
+      allowAffiliates: tagFilter === "affiliates" ? true : undefined,
       sort,
       page,
       pageSize: ADMIN_PAGE_SIZE,
@@ -223,6 +278,9 @@ export function ProductsAdminTab({
         }
         setErrorMsg("");
         setProducts(res.items);
+        setSelectedIds((prev) =>
+          prev.filter((id) => res.items.some((item) => item.id === id))
+        );
         setTotalItems(res.totalItems);
         setTotalPages(safePages);
         if (!hasFilters) onTotalUpdated(res.totalItems);
@@ -307,7 +365,78 @@ export function ProductsAdminTab({
     };
   }, [modalOpen, form.image]);
 
+  const renewableOnPage = useMemo(
+    () => products.filter((p) => getRenewalStatus(p, nowMs).canRenew),
+    [products, nowMs]
+  );
+
+  const selectedRenewableIds = useMemo(
+    () =>
+      selectedIds.filter((id) => {
+        const prod = products.find((p) => p.id === id);
+        return prod ? getRenewalStatus(prod, nowMs).canRenew : false;
+      }),
+    [selectedIds, products, nowMs]
+  );
+
+  const toggleSelectProduct = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAllRenewable = () => {
+    const eligibleIds = renewableOnPage.map((p) => p.id);
+    if (eligibleIds.length === 0) return;
+    const allSelected = eligibleIds.every((id) => selectedIds.includes(id));
+    setSelectedIds(allSelected ? [] : eligibleIds);
+  };
+
+  const handleRenew = async (mode: "all" | "selected", ids?: string[]) => {
+    if (renewingMode || isSuspended) return;
+    if (mode === "selected" && (!ids || ids.length === 0)) {
+      toast.info("Selecciona al menos un anuncio listo para renovar.");
+      return;
+    }
+    const key =
+      mode === "all" ? "all" : ids && ids.length === 1 ? ids[0] : "selected";
+    setRenewingMode(key);
+    try {
+      const result = await renewProducts(token, {
+        mode,
+        productIds: mode === "selected" ? ids : undefined,
+      });
+      if (result.totalRenewed > 0) {
+        toast.success(
+          `${result.totalRenewed} ${result.totalRenewed === 1 ? "anuncio renovado" : "anuncios renovados"}`,
+          {
+            description:
+              "Tus productos volvieron a posicionarse arriba en la tienda.",
+          }
+        );
+        setSelectedIds([]);
+        setNowMs(Date.now());
+        onMutated();
+      } else {
+        const firstReason =
+          result.skipped[0]?.reason ??
+          "Todos tus anuncios están dentro del periodo de espera de 24 horas.";
+        toast.info("No hubo anuncios listos para renovar", {
+          description: firstReason,
+        });
+      }
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setRenewingMode(null);
+    }
+  };
+
   const openNew = () => {
+    if (isSuspended) {
+      toast.error("Tu cuenta está suspendida y no puede publicar anuncios ahora.");
+      return;
+    }
     setForm({
       ...emptyProduct,
       categoryId: activeCategories[0]?.id ?? "",
@@ -338,6 +467,13 @@ export function ProductsAdminTab({
       invoice: p.factura,
       topVentas: p.top_ventas || p.top_rank !== null,
       active: p.isActive,
+      allowAffiliates: Boolean(p.allow_affiliates),
+      affiliateCommissionType: p.affiliate_commission_type ?? "percent",
+      affiliateCommissionValue:
+        typeof p.affiliate_commission_value === "number" &&
+        p.affiliate_commission_value > 0
+          ? String(p.affiliate_commission_value)
+          : "10",
     });
     setModalOpen(true);
   };
@@ -348,7 +484,7 @@ export function ProductsAdminTab({
     const { publicUrl } = await uploadOptimizedImageToStorage(
       supabase,
       STORAGE_BUCKET,
-      STORE_KEY,
+      storageFolder,
       optimized
     );
     lastUploadedWeightRef.current = {
@@ -427,7 +563,7 @@ export function ProductsAdminTab({
       return;
     }
     if (!form.categoryId) {
-      toast.error("Elige una categoría (crea una en la pestaña Categorías si aún no existe).");
+      toast.error("Elige una categoría activa.");
       return;
     }
     if (!form.image.trim()) {
@@ -463,6 +599,37 @@ export function ProductsAdminTab({
       }
     }
 
+    let affiliateCommissionType: AffiliateCommissionType | null = null;
+    let affiliateCommissionValue: number | null = null;
+    if (form.allowAffiliates) {
+      const rawComm = Number.parseFloat(
+        form.affiliateCommissionValue.trim().replace(",", ".")
+      );
+      if (!Number.isFinite(rawComm) || rawComm <= 0) {
+        toast.error("Define una comisión mayor que 0 para tus afiliados.");
+        return;
+      }
+      if (form.affiliateCommissionType === "percent") {
+        if (rawComm < 1 || rawComm > 90) {
+          toast.error("La comisión en porcentaje debe estar entre 1% y 90%.");
+          return;
+        }
+      } else if (price !== null && price > 0) {
+        const eff =
+          discountPercent !== null
+            ? calculateDiscountedPrice(price, discountPercent)
+            : price;
+        if (rawComm >= eff) {
+          toast.error(
+            "La comisión fija en USD debe ser menor que el precio final del producto."
+          );
+          return;
+        }
+      }
+      affiliateCommissionType = form.affiliateCommissionType;
+      affiliateCommissionValue = Math.round(rawComm * 100) / 100;
+    }
+
     setSaving(true);
     try {
       const payload = {
@@ -480,8 +647,11 @@ export function ProductsAdminTab({
         warranty: form.warranty,
         transport: form.transport,
         invoice: form.invoice,
-        topRank: form.topVentas ? 1 : null,
+        topRank: isSuperAdmin && form.topVentas ? 1 : null,
         isActive: form.active,
+        allowAffiliates: form.allowAffiliates,
+        affiliateCommissionType,
+        affiliateCommissionValue,
       };
 
       if (form.id) {
@@ -491,7 +661,7 @@ export function ProductsAdminTab({
       } else {
         const created = await createProduct(token, payload);
         onImagesDiscovered({ [created.id]: created.primary_image });
-        toast.success("Producto creado");
+        toast.success("Producto publicado arriba en la tienda");
       }
       setModalOpen(false);
       onMutated();
@@ -503,7 +673,11 @@ export function ProductsAdminTab({
   };
 
   const handleToggleActive = async (p: ApiProduct) => {
-    if (togglingId) return;
+    if (togglingId || isSuspended) return;
+    if (!isSuperAdmin && !p.isActive && p.moderated_at) {
+      toast.error("Este anuncio fue retirado por moderación y solo un admin puede restaurarlo.");
+      return;
+    }
     setTogglingId(p.id);
     try {
       if (p.isActive) {
@@ -532,7 +706,7 @@ export function ProductsAdminTab({
     setCategoryFilter("all");
     setPriceFilter("all");
     setTagFilter("all");
-    setSort("destacados");
+    setSort("recientes");
     setPage(1);
   };
 
@@ -546,6 +720,26 @@ export function ProductsAdminTab({
     previewDiscountPct >= 1 &&
     previewDiscountPct <= 99
       ? calculateDiscountedPrice(previewBasePrice, previewDiscountPct)
+      : null;
+
+  const previewEffectivePrice =
+    previewDiscountedPrice ??
+    (Number.isFinite(previewBasePrice) && previewBasePrice > 0
+      ? previewBasePrice
+      : undefined);
+
+  const previewCommissionNum = Number.parseFloat(
+    form.affiliateCommissionValue.replace(",", ".")
+  );
+  const previewCommissionLabel =
+    form.allowAffiliates &&
+    Number.isFinite(previewCommissionNum) &&
+    previewCommissionNum > 0
+      ? formatCommissionText(
+          form.affiliateCommissionType,
+          previewCommissionNum,
+          previewEffectivePrice
+        )
       : null;
 
   const activeImageWeight =
@@ -564,19 +758,79 @@ export function ProductsAdminTab({
       {activeCategories.length === 0 && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-violet-200 bg-violet-50/70 p-4 text-xs text-violet-950">
           <p className="font-medium">
-            Aún no tienes categorías activas en la tienda{" "}
-            <span className="font-mono font-bold">{STORE_KEY}</span>. Crea al
-            menos una categoría antes de publicar tu primer producto.
+            Aún no hay categorías activas en la tienda{" "}
+            <span className="font-mono font-bold">{STORE_KEY}</span>.
+            {isSuperAdmin
+              ? " Crea al menos una categoría antes de publicar."
+              : " Espera a que el administrador habilite categorías."}
           </p>
-          <button
-            type="button"
-            onClick={onGoToCategories}
-            className="rounded-full bg-[#6018F8] px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-[#5010E8]"
-          >
-            Ir a Categorías
-          </button>
+          {isSuperAdmin && onGoToCategories && (
+            <button
+              type="button"
+              onClick={onGoToCategories}
+              className="rounded-full bg-[#6018F8] px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-[#5010E8]"
+            >
+              Ir a Categorías
+            </button>
+          )}
         </div>
       )}
+
+      {/* Barra de renovación de anuncios cada 24h */}
+      <div className="flex flex-col gap-3 rounded-2xl border border-emerald-200/80 bg-emerald-50/50 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-950">
+            <ArrowUpCircle className="h-4 w-4 text-emerald-600" />
+            Renovar anuncios y volver arriba (cada 24h)
+          </p>
+          <p className="mt-0.5 text-[11px] leading-relaxed text-emerald-900/80">
+            Los productos se muestran por fecha de publicación o renovación.
+            Renueva tus anuncios elegibles cada 24 horas para subirlos de nuevo
+            al inicio del catálogo.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {renewableOnPage.length > 0 && (
+            <button
+              type="button"
+              onClick={toggleSelectAllRenewable}
+              className="inline-flex h-9 items-center rounded-full border border-emerald-300 bg-white px-3 text-xs font-semibold text-emerald-900 hover:bg-emerald-50"
+            >
+              {renewableOnPage.every((p) => selectedIds.includes(p.id))
+                ? "Deseleccionar"
+                : `Seleccionar listos (${renewableOnPage.length})`}
+            </button>
+          )}
+          {selectedRenewableIds.length > 0 && (
+            <button
+              type="button"
+              onClick={() => void handleRenew("selected", selectedRenewableIds)}
+              disabled={Boolean(renewingMode) || isSuspended}
+              className="inline-flex h-9 items-center gap-1.5 rounded-full bg-zinc-950 px-4 text-xs font-semibold text-white transition hover:bg-zinc-800 disabled:opacity-50"
+            >
+              {renewingMode === "selected" ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="h-3.5 w-3.5" />
+              )}
+              Renovar seleccionados ({selectedRenewableIds.length})
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => void handleRenew("all")}
+            disabled={Boolean(renewingMode) || isSuspended}
+            className="inline-flex h-9 items-center gap-1.5 rounded-full bg-emerald-600 px-4 text-xs font-semibold text-white shadow-xs transition hover:bg-emerald-700 disabled:opacity-50"
+          >
+            {renewingMode === "all" ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <ArrowUpCircle className="h-3.5 w-3.5" />
+            )}
+            Renovar todos disponibles
+          </button>
+        </div>
+      </div>
 
       {/* Barra de búsqueda y acciones */}
       <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
@@ -622,7 +876,8 @@ export function ProductsAdminTab({
           <button
             type="button"
             onClick={() => setOptimizeDialogOpen(true)}
-            className="inline-flex h-10 items-center gap-1.5 rounded-full border border-zinc-200 bg-white px-3.5 text-xs font-semibold text-zinc-700 transition hover:border-violet-300 hover:bg-violet-50 hover:text-violet-800"
+            disabled={isSuspended}
+            className="inline-flex h-10 items-center gap-1.5 rounded-full border border-zinc-200 bg-white px-3.5 text-xs font-semibold text-zinc-700 transition hover:border-violet-300 hover:bg-violet-50 hover:text-violet-800 disabled:opacity-50"
           >
             <ImageDown className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Optimizar fotos</span>
@@ -631,10 +886,11 @@ export function ProductsAdminTab({
           <button
             type="button"
             onClick={openNew}
-            className="inline-flex h-10 items-center gap-1.5 rounded-full bg-[#6018F8] px-4 text-xs font-semibold text-white shadow-xs shadow-violet-600/25 transition hover:bg-[#5010E8]"
+            disabled={isSuspended}
+            className="inline-flex h-10 items-center gap-1.5 rounded-full bg-[#6018F8] px-4 text-xs font-semibold text-white shadow-xs shadow-violet-600/25 transition hover:bg-[#5010E8] disabled:opacity-50"
           >
             <Plus className="h-4 w-4" />
-            Nuevo producto
+            Publicar producto
           </button>
         </div>
       </div>
@@ -687,12 +943,15 @@ export function ProductsAdminTab({
           <select
             value={tagFilter}
             onChange={(e) => {
-              setTagFilter(e.target.value as "all" | "onSale" | "featured");
+              setTagFilter(
+                e.target.value as "all" | "onSale" | "featured" | "affiliates"
+              );
               setPage(1);
             }}
             className="h-9 rounded-xl border border-zinc-200 bg-white px-3 text-xs font-medium text-zinc-800"
           >
             <option value="all">Etiqueta: Todas</option>
+            <option value="affiliates">Con afiliados activos</option>
             <option value="onSale">En oferta</option>
             <option value="featured">Top ventas</option>
           </select>
@@ -706,8 +965,9 @@ export function ProductsAdminTab({
               }}
               className="h-9 flex-1 rounded-xl border border-zinc-200 bg-white px-3 text-xs font-medium text-zinc-800"
             >
+              <option value="recientes">Más recientes / renovados</option>
+              <option value="nuevos">Fecha de creación</option>
               <option value="destacados">Destacados</option>
-              <option value="nuevos">Más recientes</option>
               <option value="precio-asc">Menor precio</option>
               <option value="precio-desc">Mayor precio</option>
             </select>
@@ -742,14 +1002,15 @@ export function ProductsAdminTab({
           <p className="text-sm font-semibold text-zinc-800">
             {hasFilters
               ? "Ningún producto coincide con los filtros."
-              : "Todavía no hay productos en la tienda Deve."}
+              : "Todavía no has publicado productos."}
           </p>
           <button
             type="button"
             onClick={hasFilters ? resetFilters : openNew}
-            className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-[#6018F8] px-4 py-2 text-xs font-semibold text-white hover:bg-[#5010E8]"
+            disabled={!hasFilters && isSuspended}
+            className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-[#6018F8] px-4 py-2 text-xs font-semibold text-white hover:bg-[#5010E8] disabled:opacity-50"
           >
-            {hasFilters ? "Limpiar filtros" : "Crear primer producto"}
+            {hasFilters ? "Limpiar filtros" : "Publicar primer producto"}
           </button>
         </div>
       ) : (
@@ -764,16 +1025,45 @@ export function ProductsAdminTab({
               effectivePrice > 0 &&
               origPrice > effectivePrice;
 
+            const renewal = getRenewalStatus(p, nowMs);
+            const isSelected = selectedIds.includes(p.id);
+            const commLabel = p.allow_affiliates
+              ? formatCommissionText(
+                  p.affiliate_commission_type,
+                  p.affiliate_commission_value,
+                  effectivePrice > 0 ? effectivePrice : undefined
+                )
+              : null;
+
             return (
               <li
                 key={p.id}
                 className={`flex flex-col gap-3 rounded-2xl border bg-white p-3.5 transition sm:flex-row sm:items-center ${
-                  p.isActive
-                    ? "border-zinc-200"
-                    : "border-zinc-200/70 bg-zinc-50/80 opacity-75"
+                  p.moderated_at && !p.isActive
+                    ? "border-rose-200 bg-rose-50/40"
+                    : p.isActive
+                      ? isSelected
+                        ? "border-emerald-400 ring-1 ring-emerald-400/40"
+                        : "border-zinc-200"
+                      : "border-zinc-200/70 bg-zinc-50/80 opacity-75"
                 }`}
               >
                 <div className="flex min-w-0 flex-1 items-center gap-3">
+                  {p.isActive && !p.moderated_at && (
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      disabled={!renewal.canRenew}
+                      onChange={() => toggleSelectProduct(p.id)}
+                      aria-label={`Seleccionar ${p.name} para renovar`}
+                      title={
+                        renewal.canRenew
+                          ? "Seleccionar para renovar"
+                          : renewal.label
+                      }
+                      className="h-4 w-4 shrink-0 accent-emerald-600 disabled:opacity-35"
+                    />
+                  )}
                   <ZoomableThumb
                     src={p.primary_image}
                     alt={p.name}
@@ -786,8 +1076,32 @@ export function ProductsAdminTab({
                         {p.category}
                       </span>
                       {!p.isActive && (
-                        <span className="rounded-full bg-zinc-200 px-2 py-0.5 text-[10px] font-bold text-zinc-700">
-                          Oculto
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                            p.moderated_at
+                              ? "bg-rose-100 text-rose-700"
+                              : "bg-zinc-200 text-zinc-700"
+                          }`}
+                        >
+                          {p.moderated_at ? "Retirado por moderación" : "Oculto"}
+                        </span>
+                      )}
+                      {p.isActive && !p.moderated_at && (
+                        <span
+                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                            renewal.canRenew
+                              ? "bg-emerald-100 text-emerald-800"
+                              : "bg-amber-50 text-amber-800"
+                          }`}
+                        >
+                          <Clock className="h-2.5 w-2.5" />
+                          {renewal.label}
+                        </span>
+                      )}
+                      {commLabel && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-800">
+                          <Handshake className="h-2.5 w-2.5" />
+                          Afiliados: {commLabel}
                         </span>
                       )}
                       {hasDiscount ? (
@@ -813,6 +1127,14 @@ export function ProductsAdminTab({
                       <span>
                         {[p.brand, p.model].filter(Boolean).join(" · ")}
                       </span>
+                      {isSuperAdmin && p.owner && (
+                        <span className="rounded bg-zinc-100 px-1.5 py-0.5 font-semibold text-zinc-700">
+                          Vendedor: {p.owner.displayName}
+                        </span>
+                      )}
+                      {(p.renew_count ?? 0) > 0 && (
+                        <span>· Renovado {p.renew_count}×</span>
+                      )}
                       {p.garantia && (
                         <span className="inline-flex items-center gap-0.5 rounded bg-emerald-50 px-1.5 py-0.5 font-semibold text-emerald-800">
                           <ShieldCheck className="h-3 w-3" /> Garantía
@@ -829,6 +1151,12 @@ export function ProductsAdminTab({
                         </span>
                       )}
                     </div>
+                    {p.moderation_reason && (
+                      <p className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700">
+                        <ShieldAlert className="h-3 w-3 shrink-0" />
+                        Motivo: {p.moderation_reason}
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -849,10 +1177,27 @@ export function ProductsAdminTab({
                   </div>
 
                   <div className="flex items-center gap-1.5">
+                    {renewal.canRenew && (
+                      <button
+                        type="button"
+                        onClick={() => void handleRenew("selected", [p.id])}
+                        disabled={Boolean(renewingMode) || isSuspended}
+                        title="Subir este anuncio arriba (disponible cada 24h)"
+                        className="inline-flex h-9 items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-3 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:opacity-50"
+                      >
+                        {renewingMode === p.id ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <ArrowUpCircle className="h-3.5 w-3.5" />
+                        )}
+                        Renovar
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => openEdit(p)}
-                      className="inline-flex h-9 items-center gap-1 rounded-full border border-zinc-200 bg-white px-3 text-xs font-semibold text-zinc-800 transition hover:border-violet-300 hover:bg-violet-50 hover:text-violet-800"
+                      disabled={isSuspended}
+                      className="inline-flex h-9 items-center gap-1 rounded-full border border-zinc-200 bg-white px-3 text-xs font-semibold text-zinc-800 transition hover:border-violet-300 hover:bg-violet-50 hover:text-violet-800 disabled:opacity-50"
                     >
                       <Pencil className="h-3.5 w-3.5" />
                       Editar
@@ -860,9 +1205,13 @@ export function ProductsAdminTab({
                     <button
                       type="button"
                       onClick={() => void handleToggleActive(p)}
-                      disabled={togglingId === p.id}
+                      disabled={
+                        togglingId === p.id ||
+                        isSuspended ||
+                        (!isSuperAdmin && !p.isActive && Boolean(p.moderated_at))
+                      }
                       title={p.isActive ? "Ocultar de la tienda" : "Mostrar en la tienda"}
-                      className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-600 transition hover:bg-zinc-100 disabled:opacity-50"
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-600 transition hover:bg-zinc-100 disabled:opacity-40"
                     >
                       {togglingId === p.id ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -893,8 +1242,8 @@ export function ProductsAdminTab({
       <AdminModal
         open={modalOpen}
         onClose={() => !saving && setModalOpen(false)}
-        title={form.id ? "Editar producto" : "Nuevo producto"}
-        description="Los cambios se guardan directamente en el API de POWERGY para la tienda Deve."
+        title={form.id ? "Editar producto" : "Publicar producto"}
+        description="El producto quedará ligado a tu perfil y aparecerá en las primeras posiciones de Deve Tienda."
         footer={
           <>
             <button
@@ -912,7 +1261,7 @@ export function ProductsAdminTab({
               className="inline-flex h-10 items-center gap-1.5 rounded-full bg-[#6018F8] px-5 text-xs font-semibold text-white transition hover:bg-[#5010E8] disabled:opacity-50"
             >
               {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              {form.id ? "Guardar cambios" : "Crear producto"}
+              {form.id ? "Guardar cambios" : "Publicar ahora"}
             </button>
           </>
         }
@@ -1091,8 +1440,83 @@ export function ProductsAdminTab({
             </div>
           </div>
 
+          {/* Programa de afiliados por producto */}
+          <div className="space-y-3 rounded-2xl border border-violet-200 bg-violet-50/50 p-3.5">
+            <label className="flex cursor-pointer items-center justify-between gap-2 text-xs font-bold text-violet-950">
+              <span className="inline-flex items-center gap-1.5">
+                <Handshake className="h-4 w-4 text-[#6018F8]" />
+                Permitir referidos / afiliados en este producto
+              </span>
+              <input
+                type="checkbox"
+                checked={form.allowAffiliates}
+                onChange={(e) =>
+                  setForm({ ...form, allowAffiliates: e.target.checked })
+                }
+                className="h-4 w-4 accent-[#6018F8]"
+              />
+            </label>
+            <p className="text-[11px] leading-relaxed text-violet-900/80">
+              Si lo activas, otros usuarios podrán afiliarse a este producto,
+              promocionarlo y ganar la comisión que definas por cada venta.
+            </p>
+            {form.allowAffiliates && (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="block text-[11px] font-semibold text-zinc-700">
+                    Tipo de comisión
+                  </label>
+                  <select
+                    value={form.affiliateCommissionType}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        affiliateCommissionType: e.target
+                          .value as AffiliateCommissionType,
+                      })
+                    }
+                    className="mt-1 h-9 w-full rounded-xl border border-zinc-200 bg-white px-3 text-xs font-semibold text-zinc-900"
+                  >
+                    <option value="percent">Porcentaje (%)</option>
+                    <option value="fixed_usd">Monto fijo (USD)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-zinc-700">
+                    {form.affiliateCommissionType === "percent"
+                      ? "Comisión (% entre 1 y 90)"
+                      : "Comisión fija en USD por unidad"}
+                  </label>
+                  <input
+                    type="number"
+                    min="0.5"
+                    max={form.affiliateCommissionType === "percent" ? "90" : "100000"}
+                    step="0.5"
+                    value={form.affiliateCommissionValue}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        affiliateCommissionValue: e.target.value,
+                      })
+                    }
+                    placeholder={
+                      form.affiliateCommissionType === "percent" ? "Ej. 10" : "Ej. 5"
+                    }
+                    className="mt-1 h-9 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-950"
+                  />
+                </div>
+                {previewCommissionLabel && (
+                  <p className="rounded-xl bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 sm:col-span-2">
+                    Ganancia estimada para el afiliado por unidad:{" "}
+                    <span className="font-bold">{previewCommissionLabel}</span>
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* Oferta y descuento */}
-          <div className="rounded-2xl border border-zinc-200 bg-zinc-50/70 p-3.5 space-y-3">
+          <div className="space-y-3 rounded-2xl border border-zinc-200 bg-zinc-50/70 p-3.5">
             <label className="flex cursor-pointer items-center justify-between text-xs font-semibold text-zinc-900">
               <span>Marcar en oferta</span>
               <input
@@ -1141,22 +1565,12 @@ export function ProductsAdminTab({
           {/* Atributos técnicos y estado */}
           <div className="grid gap-2.5 sm:grid-cols-2">
             {[
-              {
-                key: "warranty" as const,
-                label: "Garantía incluida",
-              },
-              {
-                key: "transport" as const,
-                label: "Transporte disponible",
-              },
-              {
-                key: "invoice" as const,
-                label: "Factura disponible",
-              },
-              {
-                key: "topVentas" as const,
-                label: "Destacado / Top ventas",
-              },
+              { key: "warranty" as const, label: "Garantía incluida" },
+              { key: "transport" as const, label: "Transporte disponible" },
+              { key: "invoice" as const, label: "Factura disponible" },
+              ...(isSuperAdmin
+                ? [{ key: "topVentas" as const, label: "Destacado / Top ventas" }]
+                : []),
               ...(form.id
                 ? [{ key: "active" as const, label: "Visible en la tienda" }]
                 : []),
@@ -1185,6 +1599,7 @@ export function ProductsAdminTab({
         onClose={() => setOptimizeDialogOpen(false)}
         token={token}
         supabase={supabase}
+        storageFolder={storageFolder}
         onCompleted={(updatedImages) => {
           onImagesDiscovered(updatedImages);
           onMutated();

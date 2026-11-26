@@ -1,18 +1,23 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element */
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
   Check,
   ChevronRight,
+  Copy,
   FileText,
+  Handshake,
   Heart,
+  Loader2,
   MessageCircle,
   PackageOpen,
   ShieldCheck,
   ShoppingCart,
   Sparkles,
+  Store,
   Truck,
   ZoomIn,
 } from "lucide-react";
@@ -24,10 +29,22 @@ import {
 import { LazyImage } from "@/components/store/LazyImage";
 import { ProductCard } from "@/components/store/ProductCard";
 import { QuantityStepper } from "@/components/store/QuantityStepper";
+import {
+  fetchMyAffiliatedProductIds,
+  registerCurrentSeller,
+  subscribeAffiliates,
+  type AdminSellerProfile,
+} from "@/lib/store/admin-api";
 import { useShopStore } from "@/lib/store/cart-store";
 import { useCategoryMap, useProductBySlugOrId } from "@/lib/store/catalog";
 import { formatPrice, formatPriceLabel } from "@/lib/store/format";
-import { fetchProductsPage, type ProductView } from "@/lib/store/powergy-api";
+import {
+  fetchProductsPage,
+  formatCommissionText,
+  type ProductView,
+} from "@/lib/store/powergy-api";
+import { buildAffiliateProductUrl } from "@/lib/store/referral";
+import { getSupabaseClient } from "@/lib/store/supabase";
 import { buildStoreWhatsAppUrl } from "@/lib/store/whatsapp";
 
 interface ProductDetailClientProps {
@@ -53,11 +70,61 @@ export function ProductDetailClient({
   );
   const [related, setRelated] = useState<ProductView[]>([]);
 
+  // Sesión opcional para afiliarse directamente desde la ficha del producto
+  const [authToken, setAuthToken] = useState("");
+  const [viewerProfile, setViewerProfile] = useState<AdminSellerProfile | null>(
+    null
+  );
+  const [affiliatedIds, setAffiliatedIds] = useState<string[]>([]);
+  const [affiliating, setAffiliating] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    let client;
+    try {
+      client = getSupabaseClient();
+    } catch {
+      return;
+    }
+
+    client.auth
+      .getSession()
+      .then(({ data }) => {
+        if (!active || !data.session?.access_token) return;
+        const tok = data.session.access_token;
+        setAuthToken(tok);
+        const meta = data.session.user.user_metadata ?? {};
+        const displayName =
+          (typeof meta.full_name === "string" && meta.full_name) ||
+          (typeof meta.name === "string" && meta.name) ||
+          null;
+        const avatarUrl =
+          (typeof meta.avatar_url === "string" && meta.avatar_url) ||
+          (typeof meta.picture === "string" && meta.picture) ||
+          null;
+        Promise.all([
+          registerCurrentSeller(tok, { displayName, avatarUrl }),
+          fetchMyAffiliatedProductIds(tok),
+        ])
+          .then(([profile, ids]) => {
+            if (!active) return;
+            setViewerProfile(profile);
+            setAffiliatedIds(ids);
+          })
+          .catch(() => {});
+      })
+      .catch(() => {});
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   useEffect(() => {
     if (!product?.category) return;
     const controller = new AbortController();
     fetchProductsPage(
-      { categories: [product.category], page: 1, pageSize: 5 },
+      { categories: [product.category], page: 1, pageSize: 5, sort: "recientes" },
       categoryMap,
       controller.signal
     )
@@ -120,6 +187,20 @@ export function ProductDetailClient({
     product.originalPrice > product.price;
   const savings = hasDiscount ? product.originalPrice - product.price : 0;
 
+  const isOwner = Boolean(
+    viewerProfile &&
+      product.ownerAdminUserId &&
+      viewerProfile.id === product.ownerAdminUserId
+  );
+  const isAffiliated = affiliatedIds.includes(product.id);
+  const commissionLabel = product.allowAffiliates
+    ? formatCommissionText(
+        product.affiliateCommissionType,
+        product.affiliateCommissionValue,
+        product.price > 0 ? product.price : undefined
+      )
+    : null;
+
   const handleAdd = () => {
     addToCart({ productId: product.id, qty });
     setAddedFeedback(true);
@@ -129,10 +210,86 @@ export function ProductDetailClient({
     window.setTimeout(() => setAddedFeedback(false), 1600);
   };
 
+  const handleAffiliateAction = async () => {
+    if (affiliating) return;
+    if (!authToken) {
+      try {
+        const client = getSupabaseClient();
+        const origin = window.location.origin;
+        const nextPath = `/tienda/${encodeURIComponent(product.slug || product.id)}`;
+        const { error } = await client.auth.signInWithOAuth({
+          provider: "google",
+          options: {
+            redirectTo: `${origin}/auth/callback?next=${encodeURIComponent(nextPath)}`,
+          },
+        });
+        if (error) toast.error(error.message);
+      } catch (err) {
+        toast.error(
+          err instanceof Error
+            ? err.message
+            : "Inicia sesión en el panel para afiliarte."
+        );
+      }
+      return;
+    }
+
+    if (isAffiliated && viewerProfile?.handle) {
+      const shareUrl = buildAffiliateProductUrl(
+        viewerProfile.handle,
+        product.slug || product.id
+      );
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        toast.success("Enlace de afiliado copiado", { description: shareUrl });
+      } catch {
+        toast.info("Tu enlace de afiliado:", { description: shareUrl });
+      }
+      return;
+    }
+
+    setAffiliating(true);
+    try {
+      const res = await subscribeAffiliates(authToken, {
+        productIds: [product.id],
+      });
+      if (res.subscribedCount > 0 || res.alreadySubscribedCount > 0) {
+        setAffiliatedIds((prev) =>
+          prev.includes(product.id) ? prev : [...prev, product.id]
+        );
+        if (viewerProfile?.handle) {
+          const shareUrl = buildAffiliateProductUrl(
+            viewerProfile.handle,
+            product.slug || product.id
+          );
+          try {
+            await navigator.clipboard.writeText(shareUrl);
+            toast.success("¡Te afiliaste! Enlace copiado al portapapeles", {
+              description: shareUrl,
+            });
+          } catch {
+            toast.success("¡Te afiliaste a este producto!");
+          }
+        } else {
+          toast.success("¡Te afiliaste a este producto!");
+        }
+      } else {
+        toast.info("Este producto no está disponible para afiliación.");
+      }
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "No pudimos completar tu afiliación."
+      );
+    } finally {
+      setAffiliating(false);
+    }
+  };
+
   const directWhatsAppUrl = buildStoreWhatsAppUrl(
-    `Hola Deve, me interesa el producto: ${product.name} (${formatPriceLabel(
+    `Hola${product.owner?.displayName ? ` ${product.owner.displayName}` : " Deve"}, me interesa el producto: ${product.name} (${formatPriceLabel(
       product.price
-    )}). ¿Tienen disponibilidad?`
+    )}). ¿Tienes disponibilidad?`,
+    product.owner?.whatsAppPhone ?? null
   );
 
   return (
@@ -231,8 +388,42 @@ export function ProductDetailClient({
               </p>
             )}
 
+            {/* Tarjeta del vendedor */}
+            {product.owner?.handle && (
+              <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl border border-zinc-200 bg-zinc-50/70 p-3">
+                <div className="flex min-w-0 items-center gap-2.5">
+                  {product.owner.avatarUrl ? (
+                    <img
+                      src={product.owner.avatarUrl}
+                      alt={product.owner.displayName}
+                      className="h-9 w-9 shrink-0 rounded-full object-cover ring-1 ring-zinc-200"
+                    />
+                  ) : (
+                    <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-violet-100 text-xs font-bold text-violet-800">
+                      <Store className="h-4 w-4" />
+                    </span>
+                  )}
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-bold text-zinc-950">
+                      {product.owner.displayName}
+                    </p>
+                    <p className="truncate font-mono text-[11px] text-zinc-500">
+                      @{product.owner.handle}
+                    </p>
+                  </div>
+                </div>
+                <Link
+                  href={`/tienda/vendedor/${encodeURIComponent(product.owner.handle)}`}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-full border border-violet-200 bg-white px-3 py-1.5 text-xs font-semibold text-violet-800 transition hover:bg-violet-50"
+                >
+                  Ver sus productos
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </Link>
+              </div>
+            )}
+
             {/* Precio */}
-            <div className="mt-5 rounded-2xl border border-zinc-200/80 bg-zinc-50/80 p-4">
+            <div className="mt-4 rounded-2xl border border-zinc-200/80 bg-zinc-50/80 p-4">
               {hasDiscount ? (
                 <div className="flex flex-wrap items-baseline gap-3">
                   <span className="font-display text-3xl font-bold text-rose-600 tabular-nums">
@@ -262,6 +453,51 @@ export function ProductDetailClient({
                 </div>
               )}
             </div>
+
+            {/* Bloque de afiliación por producto */}
+            {product.allowAffiliates && commissionLabel && !isOwner && (
+              <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-950">
+                    <Handshake className="h-4 w-4 text-emerald-600" />
+                    Gana {commissionLabel} promocionando este producto
+                  </p>
+                  <p className="mt-0.5 text-[11px] leading-relaxed text-emerald-900/80">
+                    Afíliate gratis y comparte tu enlace personal para recibir
+                    comisión por cada venta confirmada.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void handleAffiliateAction()}
+                  disabled={affiliating}
+                  className={`inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-full px-4 text-xs font-bold transition disabled:opacity-50 ${
+                    isAffiliated
+                      ? "bg-emerald-700 text-white hover:bg-emerald-800"
+                      : "bg-zinc-950 text-white hover:bg-[#6018F8]"
+                  }`}
+                >
+                  {affiliating ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : isAffiliated ? (
+                    <>
+                      <Copy className="h-3.5 w-3.5" />
+                      Ya afiliado · Copiar enlace
+                    </>
+                  ) : authToken ? (
+                    <>
+                      <Handshake className="h-3.5 w-3.5" />
+                      Afiliarme
+                    </>
+                  ) : (
+                    <>
+                      <Handshake className="h-3.5 w-3.5" />
+                      Afiliarme con Google
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
 
             {/* Badges técnicos de Garantía / Transporte / Factura */}
             {(product.warranty || product.transport || product.invoice) && (
@@ -357,7 +593,7 @@ export function ProductDetailClient({
                 className="inline-flex h-10 items-center justify-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 px-4 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-100"
               >
                 <MessageCircle className="h-4 w-4" />
-                Consultar por WhatsApp
+                Consultar al vendedor
               </a>
             </div>
           </div>

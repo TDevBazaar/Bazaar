@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   AlertCircle,
   ChevronRight,
+  Handshake,
   Loader2,
   PackageOpen,
   RefreshCw,
@@ -13,6 +14,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
+  Store,
   Tag,
   X,
 } from "lucide-react";
@@ -37,6 +39,7 @@ import { useCatalogFeed } from "@/lib/store/useCatalogFeed";
 
 function parseSort(raw: string | null): SortId {
   if (
+    raw === "recientes" ||
     raw === "destacados" ||
     raw === "precio-asc" ||
     raw === "precio-desc" ||
@@ -44,7 +47,7 @@ function parseSort(raw: string | null): SortId {
   ) {
     return raw;
   }
-  return "destacados";
+  return "recientes";
 }
 
 interface StoreCatalogClientProps {
@@ -78,8 +81,9 @@ export function StoreCatalogClient({
   const urlCat = lockedCategory ? "" : (searchParams.get("categoria")?.trim() ?? "");
   const urlQ = searchParams.get("q")?.trim() ?? "";
   const urlOffers = searchParams.get("ofertas") === "1";
+  const urlAffiliates = searchParams.get("afiliados") === "1";
   const urlSort = parseSort(searchParams.get("orden"));
-  const urlKey = `${lockedCategory ?? ""}|${urlCat}|${urlQ}|${urlOffers ? "1" : "0"}|${urlSort}`;
+  const urlKey = `${lockedCategory ?? ""}|${urlCat}|${urlQ}|${urlOffers ? "1" : "0"}|${urlAffiliates ? "1" : "0"}|${urlSort}`;
 
   const urlFilters = useMemo<FilterState>(
     () => ({
@@ -87,9 +91,10 @@ export function StoreCatalogClient({
       q: urlQ,
       cats: urlCat ? [urlCat] : [],
       onlyOffers: urlOffers,
+      onlyAffiliates: urlAffiliates,
       sort: urlSort,
     }),
-    [urlCat, urlQ, urlOffers, urlSort]
+    [urlCat, urlQ, urlOffers, urlAffiliates, urlSort]
   );
 
   const [override, setOverride] = useState<{
@@ -145,7 +150,8 @@ export function StoreCatalogClient({
     filters.cats.length === 0 &&
     filters.maxPrice === 0 &&
     !filters.onlyOffers &&
-    filters.sort === "destacados" &&
+    !filters.onlyAffiliates &&
+    filters.sort === "recientes" &&
     feedPage === 1;
 
   const usingSsrFallback =
@@ -173,7 +179,8 @@ export function StoreCatalogClient({
     }
     if (next.q.trim()) params.set("q", next.q.trim());
     if (next.onlyOffers) params.set("ofertas", "1");
-    if (next.sort !== "destacados") params.set("orden", next.sort);
+    if (next.onlyAffiliates) params.set("afiliados", "1");
+    if (next.sort !== "recientes") params.set("orden", next.sort);
     const qs = params.toString();
     router.replace(qs ? `${basePath}?${qs}` : basePath, { scroll: false });
   };
@@ -190,6 +197,15 @@ export function StoreCatalogClient({
 
   const toggleOffers = () => {
     const next: FilterState = { ...filters, onlyOffers: !filters.onlyOffers };
+    setFilters(next);
+    updateUrl(next);
+  };
+
+  const toggleAffiliates = () => {
+    const next: FilterState = {
+      ...filters,
+      onlyAffiliates: !filters.onlyAffiliates,
+    };
     setFilters(next);
     updateUrl(next);
   };
@@ -265,10 +281,13 @@ export function StoreCatalogClient({
                   : "productos disponibles"}
               </span>
             )}
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3.5 py-1.5 text-emerald-800">
-              <ShieldCheck className="h-3.5 w-3.5" />
-              Pedidos con confirmación por WhatsApp
-            </span>
+            <Link
+              href="/tienda/admin"
+              className="inline-flex items-center gap-1.5 rounded-full bg-zinc-950 px-3.5 py-1.5 text-white transition hover:bg-[#6018F8]"
+            >
+              <Store className="h-3.5 w-3.5" />
+              Publicar o afiliarme con Google
+            </Link>
           </div>
         </div>
 
@@ -384,6 +403,18 @@ export function StoreCatalogClient({
             >
               <Tag className="h-3 w-3" />
               Solo ofertas
+            </button>
+            <button
+              type="button"
+              onClick={toggleAffiliates}
+              className={`inline-flex items-center gap-1 rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
+                filters.onlyAffiliates
+                  ? "bg-emerald-600 text-white shadow-xs"
+                  : "border border-emerald-200 bg-emerald-50/70 text-emerald-800 hover:bg-emerald-100"
+              }`}
+            >
+              <Handshake className="h-3 w-3" />
+              Con comisión para afiliados
             </button>
           </nav>
         )}

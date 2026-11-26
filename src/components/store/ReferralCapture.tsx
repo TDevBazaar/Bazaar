@@ -2,17 +2,22 @@
 
 import { useEffect } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import { captureReferralFromUrl } from "@/lib/store/referral";
+import {
+  AFFILIATE_QUERY_PARAM,
+  REFERRAL_QUERY_PARAM,
+  captureReferralFromUrl,
+} from "@/lib/store/referral";
 
-/** Captura y mantiene el código de vendedor (?v=codigo) en cualquier ruta del sitio. */
+/** Captura y mantiene el enlace de afiliado (?aff=handle) o legacy (?v=codigo) en cualquier ruta. */
 export function ReferralCapture() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const refParam = searchParams.get("v");
+  const affParam = searchParams.get(AFFILIATE_QUERY_PARAM);
+  const refParam = searchParams.get(REFERRAL_QUERY_PARAM);
 
   useEffect(() => {
     captureReferralFromUrl();
-  }, [pathname, refParam]);
+  }, [pathname, affParam, refParam]);
 
   return null;
 }

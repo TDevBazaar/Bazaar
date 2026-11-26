@@ -3,24 +3,33 @@
 import Link from "next/link";
 import {
   FileText,
+  Handshake,
   Heart,
   ShieldCheck,
   ShoppingCart,
   Sparkles,
+  Store,
   Truck,
 } from "lucide-react";
 import { toast } from "sonner";
 import { LazyImage } from "@/components/store/LazyImage";
 import { useShopStore } from "@/lib/store/cart-store";
 import { formatPrice, formatPriceLabel } from "@/lib/store/format";
+import { formatCommissionText } from "@/lib/store/powergy-api";
 import type { Product } from "@/lib/store/types";
 
 interface ProductCardProps {
   product: Product;
   priority?: boolean;
+  /** Query string opcional para enlaces del producto (p. ej. "?aff=handle"). */
+  hrefQuery?: string;
 }
 
-export function ProductCard({ product, priority = false }: ProductCardProps) {
+export function ProductCard({
+  product,
+  priority = false,
+  hrefQuery,
+}: ProductCardProps) {
   const addToCart = useShopStore((s) => s.addToCart);
   const toggleFavorite = useShopStore((s) => s.toggleFavorite);
   const favorites = useShopStore((s) => s.favorites);
@@ -39,7 +48,15 @@ export function ProductCard({ product, priority = false }: ProductCardProps) {
     product.price > 0 &&
     product.originalPrice > product.price;
 
-  const detailHref = `/tienda/${encodeURIComponent(product.slug || product.id)}`;
+  const commissionShort = product.allowAffiliates
+    ? formatCommissionText(
+        product.affiliateCommissionType,
+        product.affiliateCommissionValue
+      )
+    : null;
+
+  const baseDetailHref = `/tienda/${encodeURIComponent(product.slug || product.id)}`;
+  const detailHref = hrefQuery ? `${baseDetailHref}${hrefQuery}` : baseDetailHref;
 
   const handleAdd = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -89,6 +106,13 @@ export function ProductCard({ product, priority = false }: ProductCardProps) {
               Top
             </span>
           )}
+
+          {commissionShort && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-600/95 px-2 py-0.5 text-[10px] font-bold text-white shadow-xs">
+              <Handshake className="h-3 w-3" />
+              {commissionShort}
+            </span>
+          )}
         </div>
 
         {/* Botón de favorito */}
@@ -124,6 +148,17 @@ export function ProductCard({ product, priority = false }: ProductCardProps) {
               {product.name}
             </h3>
           </Link>
+
+          {/* Vendedor dueño del producto */}
+          {product.owner?.handle && (
+            <Link
+              href={`/tienda/vendedor/${encodeURIComponent(product.owner.handle)}`}
+              className="mt-1.5 inline-flex max-w-full items-center gap-1 text-[11px] font-medium text-zinc-500 transition hover:text-violet-700"
+            >
+              <Store className="h-3 w-3 shrink-0 text-zinc-400" />
+              <span className="truncate">Por {product.owner.displayName}</span>
+            </Link>
+          )}
 
           {/* Insignias técnicas (Garantía / Transporte / Factura) */}
           {(product.warranty || product.transport || product.invoice) && (

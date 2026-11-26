@@ -12,13 +12,30 @@ const API_BASE = (
 
 /** Rutas cuyo cuerpo JSON admite la propiedad `store`. */
 function acceptsStoreInBody(path: string[], method: string): boolean {
-  const [root] = path;
+  const [root, second, third, fourth] = path;
   if (root === "orders") return path.length === 1 && method === "POST";
   if (root === "products" || root === "categories") {
     return (
       (path.length === 1 && method === "POST") ||
-      (path.length === 2 && method === "PUT")
+      (path.length === 2 && method === "PUT") ||
+      (root === "products" && second === "renew" && method === "POST")
     );
+  }
+  if (root === "affiliates" && second === "subscribe" && method === "POST") {
+    return true;
+  }
+  if (root === "sellers" && second === "me" && third === "register" && method === "POST") {
+    return true;
+  }
+  if (
+    root === "admin" &&
+    second === "moderation" &&
+    third === "products" &&
+    fourth &&
+    path[4] === "hide" &&
+    method === "POST"
+  ) {
+    return true;
   }
   return false;
 }

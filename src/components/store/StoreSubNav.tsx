@@ -92,16 +92,16 @@ export function StoreSubNav() {
 
           <Link
             href="/tienda/admin"
-            aria-label="Panel de administración"
-            title="Panel de administración"
-            className={`inline-flex h-8 w-8 items-center justify-center rounded-full border transition sm:w-auto sm:gap-1.5 sm:px-3 ${
+            aria-label="Vender o gestionar mi panel"
+            title="Publicar productos, afiliaciones y panel"
+            className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-full border px-3 transition ${
               pathname === "/tienda/admin"
                 ? "border-violet-300 bg-violet-50 text-violet-800"
-                : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300 hover:bg-zinc-50 hover:text-zinc-950"
+                : "border-zinc-200 bg-white text-zinc-700 hover:border-violet-300 hover:bg-violet-50 hover:text-violet-800"
             }`}
           >
-            <ShieldCheck className="h-3.5 w-3.5" />
-            <span className="hidden text-xs font-semibold md:inline">Admin</span>
+            <ShieldCheck className="h-3.5 w-3.5 text-[#6018F8]" />
+            <span className="text-xs font-semibold">Vender</span>
           </Link>
         </div>
       </div>

@@ -13,7 +13,12 @@ export interface CartLine extends CartItem {
   lineTotal: number;
 }
 
-export type SortId = "destacados" | "precio-asc" | "precio-desc" | "nuevos";
+export type SortId =
+  | "recientes"
+  | "destacados"
+  | "precio-asc"
+  | "precio-desc"
+  | "nuevos";
 
 export interface FilterState {
   q: string;
@@ -21,6 +26,7 @@ export interface FilterState {
   maxPrice: number;
   sort: SortId;
   onlyOffers: boolean;
+  onlyAffiliates?: boolean;
 }
 
 export interface OrderSummary {
@@ -30,4 +36,10 @@ export interface OrderSummary {
   total: number;
   status: "requested" | "closed" | "cancelled";
   createdAt: string;
+  sellerName?: string | null;
+  whatsappUrl?: string;
+  whatsappRouting?: string | null;
+  whatsappRecipientName?: string | null;
+  affiliateHandle?: string | null;
+  totalAffiliateCommissionUsd?: number | null;
 }

@@ -120,6 +120,7 @@ export function useCatalogFeed({
       q: debouncedQ.trim() || undefined,
       maxPrice: debouncedMaxPrice > 0 ? debouncedMaxPrice : undefined,
       onSale: filters.onlyOffers || undefined,
+      allowAffiliates: filters.onlyAffiliates || undefined,
       sort: filters.sort,
     }),
     [
@@ -127,6 +128,7 @@ export function useCatalogFeed({
       debouncedQ,
       debouncedMaxPrice,
       filters.onlyOffers,
+      filters.onlyAffiliates,
       filters.sort,
     ]
   );
@@ -140,6 +142,7 @@ export function useCatalogFeed({
         q: debouncedQ.trim(),
         maxPrice: debouncedMaxPrice > 0 ? debouncedMaxPrice : 0,
         onlyOffers: filters.onlyOffers,
+        onlyAffiliates: Boolean(filters.onlyAffiliates),
         sort: filters.sort,
         isPaginated,
         pageSize,
@@ -151,6 +154,7 @@ export function useCatalogFeed({
       debouncedQ,
       debouncedMaxPrice,
       filters.onlyOffers,
+      filters.onlyAffiliates,
       filters.sort,
       isPaginated,
       pageSize,

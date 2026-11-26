@@ -7,7 +7,10 @@ import {
   type ApiPage,
   type ApiProduct,
 } from "@/lib/store/powergy-api";
-import { fetchStoreCategoriesServer } from "@/lib/store/powergy-server";
+import {
+  fetchPublicSellersDirectoryServer,
+  fetchStoreCategoriesServer,
+} from "@/lib/store/powergy-server";
 
 export const revalidate = 3600;
 
@@ -96,9 +99,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.9,
   }));
 
-  const [categories, productRoutes] = await Promise.all([
+  const [categories, productRoutes, sellers] = await Promise.all([
     fetchStoreCategoriesServer(3600),
     fetchActiveProductEntries(),
+    fetchPublicSellersDirectoryServer(3600),
   ]);
 
   const categoryRoutes: MetadataRoute.Sitemap = categories.map((cat) => ({
@@ -108,10 +112,18 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.85,
   }));
 
+  const sellerRoutes: MetadataRoute.Sitemap = sellers.map((seller) => ({
+    url: `${siteConfig.siteUrl}/tienda/vendedor/${encodeURIComponent(seller.handle)}`,
+    lastModified: seller.lastActivityAt ? new Date(seller.lastActivityAt) : now,
+    changeFrequency: "daily",
+    priority: 0.8,
+  }));
+
   return [
     ...staticRoutes,
     ...serviceRoutes,
     ...categoryRoutes,
+    ...sellerRoutes,
     ...productRoutes,
   ];
 }

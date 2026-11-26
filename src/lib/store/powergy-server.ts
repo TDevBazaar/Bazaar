@@ -7,6 +7,9 @@ import {
   type ApiCategory,
   type ApiPage,
   type ApiProduct,
+  type ApiPublicAffiliateShowcase,
+  type ApiPublicSellerDirectoryItem,
+  type ApiPublicSellerProfile,
   type CategoryView,
   type ProductQueryOptions,
   type ProductView,
@@ -80,6 +83,12 @@ export async function fetchStoreProductsServer(
   }
   if (opts.onSale) params.set("onSale", "true");
   if (opts.featured !== undefined) params.set("featured", String(opts.featured));
+  if (opts.allowAffiliates !== undefined) {
+    params.set("allowAffiliates", String(opts.allowAffiliates));
+  }
+  if (opts.ownerHandle?.trim()) {
+    params.set("ownerHandle", opts.ownerHandle.trim());
+  }
   if (opts.sort) params.set("sort", opts.sort);
 
   const catMap = new Map(
@@ -128,7 +137,7 @@ export async function fetchStoreHomeSnapshotServer(limit = 4): Promise<{
   ]);
 
   const page = await fetchStoreProductsServer(
-    { page: 1, pageSize: limit, sort: "destacados" },
+    { page: 1, pageSize: limit, sort: "recientes" },
     categories
   );
 
@@ -137,4 +146,77 @@ export async function fetchStoreHomeSnapshotServer(limit = 4): Promise<{
     products: page.items,
     totalActive: meta?.totalActive ?? page.totalItems,
   };
+}
+
+export async function fetchPublicSellerProfileServer(
+  handle: string,
+  revalidate = 60
+): Promise<ApiPublicSellerProfile | null> {
+  const base = getPowergyApiServerBase();
+  try {
+    const res = await fetch(
+      `${base}/api/sellers/public/${encodeURIComponent(handle.trim())}?store=${encodeURIComponent(STORE_KEY)}`,
+      {
+        headers: { Accept: "application/json" },
+        next: { revalidate },
+        signal: AbortSignal.timeout(SERVER_TIMEOUT_MS),
+      }
+    );
+    if (!res.ok) return null;
+    return (await res.json()) as ApiPublicSellerProfile;
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchPublicAffiliateShowcaseServer(
+  handle: string,
+  categories: CategoryView[] = [],
+  revalidate = 60
+): Promise<{
+  affiliate: ApiPublicSellerProfile;
+  products: ProductView[];
+} | null> {
+  const base = getPowergyApiServerBase();
+  const catMap = new Map(
+    categories.map((c) => [c.apiId, { slug: c.slug, name: c.name }])
+  );
+  try {
+    const res = await fetch(
+      `${base}/api/affiliates/public/${encodeURIComponent(handle.trim())}?store=${encodeURIComponent(STORE_KEY)}`,
+      {
+        headers: { Accept: "application/json" },
+        next: { revalidate },
+        signal: AbortSignal.timeout(SERVER_TIMEOUT_MS),
+      }
+    );
+    if (!res.ok) return null;
+    const raw = (await res.json()) as ApiPublicAffiliateShowcase;
+    return {
+      affiliate: raw.affiliate,
+      products: raw.products.map((item) => mapProduct(item, catMap)),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchPublicSellersDirectoryServer(
+  revalidate = 3600
+): Promise<ApiPublicSellerDirectoryItem[]> {
+  const base = getPowergyApiServerBase();
+  try {
+    const res = await fetch(
+      `${base}/api/sellers/public?store=${encodeURIComponent(STORE_KEY)}`,
+      {
+        headers: { Accept: "application/json" },
+        next: { revalidate },
+        signal: AbortSignal.timeout(SERVER_TIMEOUT_MS),
+      }
+    );
+    if (!res.ok) return [];
+    return (await res.json()) as ApiPublicSellerDirectoryItem[];
+  } catch {
+    return [];
+  }
 }

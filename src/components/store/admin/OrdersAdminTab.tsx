@@ -118,6 +118,9 @@ export function OrdersAdminTab({
   const [statusFilter, setStatusFilter] = useState<
     "all" | "requested" | "closed" | "cancelled"
   >("all");
+  const [scopeFilter, setScopeFilter] = useState<"all" | "owner" | "affiliate">(
+    "all"
+  );
   const [referralFilter, setReferralFilter] = useState("all");
   const [priceFilter, setPriceFilter] = useState<"all" | "unpriced" | "priced">(
     "all"
@@ -170,6 +173,7 @@ export function OrdersAdminTab({
     fetchOrderMetrics(token, {
       from: resolvedDates.metricsFrom,
       to: resolvedDates.metricsTo,
+      scope: scopeFilter,
       signal: controller.signal,
     })
       .then((res) => {
@@ -193,13 +197,14 @@ export function OrdersAdminTab({
   }, [
     token,
     refreshTick,
+    scopeFilter,
     resolvedDates.metricsFrom,
     resolvedDates.metricsTo,
     resolvedDates.validationError,
     onMetricsLoaded,
   ]);
 
-  const ordersRequestKey = `${token}|${page}|${refreshTick}|${statusFilter}|${debouncedQuery}|${referralFilter}|${priceFilter}|${resolvedDates.ordersFrom ?? ""}|${resolvedDates.ordersTo ?? ""}`;
+  const ordersRequestKey = `${token}|${page}|${refreshTick}|${scopeFilter}|${statusFilter}|${debouncedQuery}|${referralFilter}|${priceFilter}|${resolvedDates.ordersFrom ?? ""}|${resolvedDates.ordersTo ?? ""}`;
   const loading =
     Boolean(token) &&
     !resolvedDates.validationError &&
@@ -214,6 +219,7 @@ export function OrdersAdminTab({
 
     fetchAdminOrders(token, {
       status: statusFilter === "all" ? undefined : statusFilter,
+      scope: scopeFilter,
       q: debouncedQuery || undefined,
       referral: referralFilter === "all" ? undefined : referralFilter,
       hasUnpriced:
@@ -275,6 +281,7 @@ export function OrdersAdminTab({
     token,
     page,
     refreshTick,
+    scopeFilter,
     statusFilter,
     debouncedQuery,
     referralFilter,
@@ -552,6 +559,33 @@ export function OrdersAdminTab({
 
   return (
     <div className="space-y-4">
+      {/* Filtro de rol: Mis ventas (dueño) vs Mis referidos (afiliado) */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        {(
+          [
+            { id: "all", label: "Todas mis solicitudes" },
+            { id: "owner", label: "Mis ventas (dueño)" },
+            { id: "affiliate", label: "Mis referidos (afiliado)" },
+          ] as const
+        ).map((opt) => (
+          <button
+            key={opt.id}
+            type="button"
+            onClick={() => {
+              setScopeFilter(opt.id);
+              setPage(1);
+            }}
+            className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
+              scopeFilter === opt.id
+                ? "bg-zinc-950 text-white"
+                : "border border-zinc-200 bg-white text-zinc-700 hover:bg-violet-50 hover:text-violet-800"
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
       {/* Presets de fecha */}
       <div className="rounded-2xl border border-zinc-200 bg-white p-3.5">
         <div className="flex flex-wrap items-center gap-1.5">
@@ -673,6 +707,14 @@ export function OrdersAdminTab({
             <p className="mt-0.5 text-[11px] text-zinc-500 tabular-nums">
               Estimado total: {formatPrice(metrics.estimatedValueUsd ?? 0)}
             </p>
+            {(metrics.totalAffiliateCommissionUsd ?? 0) > 0 && (
+              <p className="mt-0.5 text-[11px] font-semibold text-emerald-700 tabular-nums">
+                Comisiones afiliados: {formatPrice(metrics.closedAffiliateCommissionUsd ?? 0)}{" "}
+                <span className="font-normal text-zinc-500">
+                  (est. {formatPrice(metrics.totalAffiliateCommissionUsd ?? 0)})
+                </span>
+              </p>
+            )}
           </div>
         </div>
       )}
@@ -830,10 +872,23 @@ export function OrdersAdminTab({
                   >
                     {STATUS_LABELS[order.status] ?? order.status}
                   </span>
-                  {order.referralCode && (
+                  {(order.affiliateHandle || order.referralCode) && (
                     <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2.5 py-0.5 text-[11px] font-semibold text-violet-800">
                       <Link2 className="h-3 w-3" />
-                      {order.referredByAdminName || order.referralCode}
+                      {order.affiliateHandle
+                        ? `Afiliado @${order.affiliateHandle}`
+                        : order.referredByAdminName || order.referralCode}
+                    </span>
+                  )}
+                  {typeof order.totalAffiliateCommissionUsd === "number" &&
+                    order.totalAffiliateCommissionUsd > 0 && (
+                      <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-bold text-emerald-800 tabular-nums">
+                        Comisión: {formatPrice(order.totalAffiliateCommissionUsd)}
+                      </span>
+                    )}
+                  {order.whatsAppRouting === "affiliate" && (
+                    <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[10.5px] font-semibold text-sky-800">
+                      WA al afiliado
                     </span>
                   )}
                   {order.hasUnpricedItems && (
@@ -895,7 +950,11 @@ export function OrdersAdminTab({
             : undefined
         }
         footer={
-          detail?.status === "requested" ? (
+          detail?.status === "requested" &&
+          (sellerProfile?.role === "admin" ||
+            !detail.ownerAdminUserId ||
+            detail.ownerAdminUserId === sellerProfile?.id ||
+            detail.items.some((i) => i.ownerAdminUserId === sellerProfile?.id)) ? (
             <>
               <button
                 type="button"
@@ -939,12 +998,31 @@ export function OrdersAdminTab({
           </div>
         ) : (
           <div className="space-y-5">
-            {detail.referralCode && (
-              <div className="inline-flex items-center gap-1.5 rounded-full bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-800">
-                <Link2 className="h-3.5 w-3.5" />
-                Referido por:{" "}
-                {detail.referredByAdminName || detail.referralCode} (?v=
-                {detail.referralCode})
+            {(detail.affiliateHandle || detail.referralCode) && (
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="inline-flex items-center gap-1.5 rounded-full bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-800">
+                  <Link2 className="h-3.5 w-3.5" />
+                  Referido por:{" "}
+                  {detail.referredByAdminName ||
+                    detail.affiliateHandle ||
+                    detail.referralCode}
+                  {detail.affiliateHandle
+                    ? ` (@${detail.affiliateHandle})`
+                    : detail.referralCode
+                      ? ` (?v=${detail.referralCode})`
+                      : ""}
+                </div>
+                {typeof detail.totalAffiliateCommissionUsd === "number" &&
+                  detail.totalAffiliateCommissionUsd > 0 && (
+                    <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-900 tabular-nums">
+                      Comisión afiliado: {formatPrice(detail.totalAffiliateCommissionUsd)}
+                    </span>
+                  )}
+                {detail.whatsAppRecipientName && (
+                  <span className="rounded-full bg-zinc-100 px-3 py-1 text-xs font-medium text-zinc-700">
+                    WhatsApp dirigido a: {detail.whatsAppRecipientName}
+                  </span>
+                )}
               </div>
             )}
 
@@ -1095,7 +1173,11 @@ export function OrdersAdminTab({
             )}
 
             {/* Cierre si está abierta */}
-            {detail.status === "requested" ? (
+            {detail.status === "requested" &&
+            (sellerProfile?.role === "admin" ||
+              !detail.ownerAdminUserId ||
+              detail.ownerAdminUserId === sellerProfile?.id ||
+              detail.items.some((i) => i.ownerAdminUserId === sellerProfile?.id)) ? (
               <div className="space-y-3 rounded-2xl border border-zinc-200 bg-zinc-50/80 p-4">
                 <p className="text-xs font-bold uppercase tracking-wider text-zinc-600">
                   Resultado del pedido

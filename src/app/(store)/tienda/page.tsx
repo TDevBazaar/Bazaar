@@ -44,7 +44,7 @@ export default async function TiendaPage() {
     fetchCatalogMetaServer(),
   ]);
   const initialPage = await fetchStoreProductsServer(
-    { page: 1, pageSize: 12, sort: "destacados" },
+    { page: 1, pageSize: 12, sort: "recientes" },
     initialCategories
   );
 

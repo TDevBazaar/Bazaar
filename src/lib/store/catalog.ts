@@ -57,18 +57,20 @@ export function hasUnpricedLines(lines: CartLine[]): boolean {
 }
 
 export const SORT_OPTIONS: { id: SortId; label: string }[] = [
+  { id: "recientes", label: "Más recientes" },
   { id: "destacados", label: "Destacados" },
   { id: "precio-asc", label: "Precio: menor a mayor" },
   { id: "precio-desc", label: "Precio: mayor a menor" },
-  { id: "nuevos", label: "Novedades" },
+  { id: "nuevos", label: "Nuevos ingresos" },
 ];
 
 export const DEFAULT_FILTERS: FilterState = {
   q: "",
   cats: [],
   maxPrice: 0,
-  sort: "destacados",
+  sort: "recientes",
   onlyOffers: false,
+  onlyAffiliates: false,
 };
 
 export function priceCeilingFromMax(
@@ -79,5 +81,10 @@ export function priceCeilingFromMax(
 }
 
 export function activeFilterCount(f: FilterState): number {
-  return f.cats.length + (f.maxPrice > 0 ? 1 : 0) + (f.onlyOffers ? 1 : 0);
+  return (
+    f.cats.length +
+    (f.maxPrice > 0 ? 1 : 0) +
+    (f.onlyOffers ? 1 : 0) +
+    (f.onlyAffiliates ? 1 : 0)
+  );
 }

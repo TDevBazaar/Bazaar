@@ -1,12 +1,17 @@
-import { ApiError, apiGet } from "./powergy-api";
+import {
+  ApiError,
+  STORE_KEY,
+  apiGet,
+  type ApiPublicSellerProfile,
+} from "./powergy-api";
 import { normalizeWhatsAppPhone } from "./whatsapp";
 
-/* ── Enlaces de referido por administrador (?v=codigo) ────────────
-   Recuerda el código de vendedor en localStorage durante 7 días
-   (el último enlace visitado prevalece) y al confirmar un pedido en
-   la tienda enruta el WhatsApp al teléfono de ese administrador. */
+/* ── Atribución de afiliados (?aff=handle) y enlace legacy (?v=codigo) ──
+   Recuerda el enlace visitado en localStorage durante 7 días (último toque)
+   y permite validar la atribución por producto al llegar al checkout. */
 
 export const REFERRAL_STORAGE_KEY = "deve-store-seller-ref";
+export const AFFILIATE_QUERY_PARAM = "aff";
 export const REFERRAL_QUERY_PARAM = "v";
 export const REFERRAL_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const REVALIDATE_INTERVAL_MS = 5 * 60 * 1000;
@@ -19,6 +24,8 @@ export interface PublicSellerResponse {
 }
 
 export interface StoredReferral {
+  kind: "affiliate" | "legacy";
+  /** Handle del afiliado (?aff=) o código legacy (?v=) */
   code: string;
   displayName?: string;
   whatsAppPhone?: string;
@@ -28,10 +35,17 @@ export interface StoredReferral {
 }
 
 const VALID_CODE_RE = /^[a-z0-9][a-z0-9_-]{1,39}$/;
+const VALID_HANDLE_RE = /^[a-z0-9](?:[a-z0-9_-]{1,48})[a-z0-9]$/;
 
 export function normalizeReferralCode(raw?: string | null): string | null {
   const clean = raw?.trim().toLowerCase() ?? "";
   return VALID_CODE_RE.test(clean) ? clean : null;
+}
+
+export function normalizeHandle(raw?: string | null): string | null {
+  const clean = raw?.trim().replace(/^@+/, "").toLowerCase() ?? "";
+  if (!clean || clean.includes("--")) return null;
+  return VALID_HANDLE_RE.test(clean) ? clean : null;
 }
 
 export function sanitizeReferralCodeInput(raw: string): string {
@@ -43,17 +57,57 @@ export function sanitizeReferralCodeInput(raw: string): string {
     .slice(0, 40);
 }
 
+export function sanitizeHandleInput(raw: string): string {
+  return raw
+    .toLowerCase()
+    .replace(/^@+/, "")
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9_-]/g, "")
+    .replace(/--+/g, "-")
+    .replace(/^[-_]+/, "")
+    .slice(0, 50);
+}
+
+function getOrigin(originOverride?: string): string {
+  return (
+    originOverride ??
+    (typeof window !== "undefined" ? window.location.origin : "")
+  );
+}
+
 export function buildShareReferralUrl(
   code: string,
   path = "/tienda",
   originOverride?: string
 ): string {
   const clean = normalizeReferralCode(code) ?? sanitizeReferralCodeInput(code);
-  const origin =
-    originOverride ??
-    (typeof window !== "undefined" ? window.location.origin : "");
   const cleanPath = path.startsWith("/") ? path : `/${path}`;
-  return `${origin}${cleanPath}?${REFERRAL_QUERY_PARAM}=${encodeURIComponent(clean)}`;
+  return `${getOrigin(originOverride)}${cleanPath}?${REFERRAL_QUERY_PARAM}=${encodeURIComponent(clean)}`;
+}
+
+export function buildSellerProfileUrl(
+  handle: string,
+  originOverride?: string
+): string {
+  const clean = normalizeHandle(handle) ?? sanitizeHandleInput(handle);
+  return `${getOrigin(originOverride)}/tienda/vendedor/${encodeURIComponent(clean)}`;
+}
+
+export function buildAffiliateProductUrl(
+  handle: string,
+  productSlug: string,
+  originOverride?: string
+): string {
+  const clean = normalizeHandle(handle) ?? sanitizeHandleInput(handle);
+  return `${getOrigin(originOverride)}/tienda/${encodeURIComponent(productSlug)}?${AFFILIATE_QUERY_PARAM}=${encodeURIComponent(clean)}`;
+}
+
+export function buildAffiliateShowcaseUrl(
+  handle: string,
+  originOverride?: string
+): string {
+  const clean = normalizeHandle(handle) ?? sanitizeHandleInput(handle);
+  return `${getOrigin(originOverride)}/tienda/vendedor/${encodeURIComponent(clean)}?tab=afiliados&${AFFILIATE_QUERY_PARAM}=${encodeURIComponent(clean)}`;
 }
 
 export function readStoredReferral(): StoredReferral | null {
@@ -62,7 +116,12 @@ export function readStoredReferral(): StoredReferral | null {
     const raw = window.localStorage.getItem(REFERRAL_STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<StoredReferral> | null;
-    const code = normalizeReferralCode(parsed?.code);
+    const kind: "affiliate" | "legacy" =
+      parsed?.kind === "affiliate" ? "affiliate" : "legacy";
+    const code =
+      kind === "affiliate"
+        ? normalizeHandle(parsed?.code)
+        : normalizeReferralCode(parsed?.code);
     if (
       !code ||
       typeof parsed?.expiresAt !== "number" ||
@@ -93,6 +152,7 @@ export function readStoredReferral(): StoredReferral | null {
       normalizeWhatsAppPhone(parsed.whatsAppPhone) ?? undefined;
 
     return {
+      kind,
       code,
       displayName,
       whatsAppPhone,
@@ -120,41 +180,65 @@ function writeStoredReferral(entry: StoredReferral | null): void {
 
 const inFlightLookups = new Map<string, Promise<StoredReferral | null>>();
 
-export function resolveSellerByCode(
+export function resolveReferralIdentity(
+  kind: "affiliate" | "legacy",
   code: string
 ): Promise<StoredReferral | null> {
-  const cleanCode = normalizeReferralCode(code);
+  const cleanCode =
+    kind === "affiliate" ? normalizeHandle(code) : normalizeReferralCode(code);
   if (!cleanCode || typeof window === "undefined") {
     return Promise.resolve(null);
   }
 
-  const pending = inFlightLookups.get(cleanCode);
+  const cacheKey = `${kind}:${cleanCode}`;
+  const pending = inFlightLookups.get(cacheKey);
   if (pending) return pending;
 
   const task = (async (): Promise<StoredReferral | null> => {
     try {
-      const seller = await apiGet<PublicSellerResponse>(
-        `sellers/${encodeURIComponent(cleanCode)}`
-      );
-      const phone = normalizeWhatsAppPhone(seller.whatsAppPhone);
-      const latest = readStoredReferral();
-      if (latest && latest.code !== cleanCode) {
-        return latest;
+      let displayName: string;
+      let phone: string | undefined;
+
+      if (kind === "affiliate") {
+        const profile = await apiGet<ApiPublicSellerProfile>(
+          `sellers/public/${encodeURIComponent(cleanCode)}?store=${encodeURIComponent(STORE_KEY)}`
+        );
+        displayName = profile.displayName?.trim() || `@${cleanCode}`;
+        phone = normalizeWhatsAppPhone(profile.whatsAppPhone) ?? undefined;
+      } else {
+        const seller = await apiGet<PublicSellerResponse>(
+          `sellers/${encodeURIComponent(cleanCode)}`
+        );
+        displayName = seller.displayName?.trim() || cleanCode;
+        phone = normalizeWhatsAppPhone(seller.whatsAppPhone) ?? undefined;
+        if (!phone) {
+          const latest = readStoredReferral();
+          if (latest?.kind === "legacy" && latest.code === cleanCode) {
+            writeStoredReferral(null);
+          }
+          return null;
+        }
       }
 
-      if (!phone) {
-        if (latest?.code === cleanCode) writeStoredReferral(null);
-        return null;
+      const latest = readStoredReferral();
+      if (latest && (latest.kind !== kind || latest.code !== cleanCode)) {
+        return latest;
       }
 
       const now = Date.now();
       const updated: StoredReferral = {
+        kind,
         code: cleanCode,
-        displayName: seller.displayName?.trim() || cleanCode,
+        displayName,
         whatsAppPhone: phone,
-        capturedAt: latest?.code === cleanCode ? latest.capturedAt : now,
+        capturedAt:
+          latest?.kind === kind && latest.code === cleanCode
+            ? latest.capturedAt
+            : now,
         expiresAt:
-          latest?.code === cleanCode ? latest.expiresAt : now + REFERRAL_TTL_MS,
+          latest?.kind === kind && latest.code === cleanCode
+            ? latest.expiresAt
+            : now + REFERRAL_TTL_MS,
         resolvedAt: now,
       };
       writeStoredReferral(updated);
@@ -162,18 +246,18 @@ export function resolveSellerByCode(
     } catch (error) {
       const latest = readStoredReferral();
       if (error instanceof ApiError && error.status === 404) {
-        if (latest?.code === cleanCode) {
+        if (latest?.kind === kind && latest.code === cleanCode) {
           writeStoredReferral(null);
         }
         return null;
       }
-      return latest?.code === cleanCode ? latest : null;
+      return latest?.kind === kind && latest.code === cleanCode ? latest : null;
     } finally {
-      inFlightLookups.delete(cleanCode);
+      inFlightLookups.delete(cacheKey);
     }
   })();
 
-  inFlightLookups.set(cleanCode, task);
+  inFlightLookups.set(cacheKey, task);
   return task;
 }
 
@@ -181,32 +265,50 @@ export function captureReferralFromUrl(): StoredReferral | null {
   if (typeof window === "undefined") return null;
 
   const params = new URLSearchParams(window.location.search);
-  const fromUrl = normalizeReferralCode(params.get(REFERRAL_QUERY_PARAM));
+  const fromAff = normalizeHandle(params.get(AFFILIATE_QUERY_PARAM));
+  const fromLegacy = normalizeReferralCode(params.get(REFERRAL_QUERY_PARAM));
   const existing = readStoredReferral();
 
-  if (fromUrl) {
+  if (fromAff) {
     const now = Date.now();
-    const isSameCode = existing?.code === fromUrl;
+    const isSame = existing?.kind === "affiliate" && existing.code === fromAff;
     const entry: StoredReferral = {
-      code: fromUrl,
-      displayName: isSameCode ? existing.displayName : undefined,
-      whatsAppPhone: isSameCode ? existing.whatsAppPhone : undefined,
+      kind: "affiliate",
+      code: fromAff,
+      displayName: isSame ? existing.displayName : undefined,
+      whatsAppPhone: isSame ? existing.whatsAppPhone : undefined,
       capturedAt: now,
       expiresAt: now + REFERRAL_TTL_MS,
-      resolvedAt: isSameCode ? existing.resolvedAt : undefined,
+      resolvedAt: isSame ? existing.resolvedAt : undefined,
     };
     writeStoredReferral(entry);
-    void resolveSellerByCode(fromUrl);
+    void resolveReferralIdentity("affiliate", fromAff);
+    return entry;
+  }
+
+  if (fromLegacy) {
+    const now = Date.now();
+    const isSame = existing?.kind === "legacy" && existing.code === fromLegacy;
+    const entry: StoredReferral = {
+      kind: "legacy",
+      code: fromLegacy,
+      displayName: isSame ? existing.displayName : undefined,
+      whatsAppPhone: isSame ? existing.whatsAppPhone : undefined,
+      capturedAt: now,
+      expiresAt: now + REFERRAL_TTL_MS,
+      resolvedAt: isSame ? existing.resolvedAt : undefined,
+    };
+    writeStoredReferral(entry);
+    void resolveReferralIdentity("legacy", fromLegacy);
     return entry;
   }
 
   if (existing) {
     const isStale =
-      !existing.whatsAppPhone ||
       !existing.resolvedAt ||
       Date.now() - existing.resolvedAt > REVALIDATE_INTERVAL_MS;
     if (isStale) {
-      void resolveSellerByCode(existing.code);
+      void resolveReferralIdentity(existing.kind, existing.code);
     }
     return existing;
   }
@@ -224,7 +326,6 @@ export async function resolveActiveReferralForCheckout(
   if (!stored) return null;
 
   if (
-    stored.whatsAppPhone &&
     stored.resolvedAt &&
     Date.now() - stored.resolvedAt < FRESH_CHECKOUT_WINDOW_MS
   ) {
@@ -232,7 +333,7 @@ export async function resolveActiveReferralForCheckout(
   }
 
   return Promise.race([
-    resolveSellerByCode(stored.code),
+    resolveReferralIdentity(stored.kind, stored.code),
     new Promise<StoredReferral | null>((resolve) =>
       window.setTimeout(() => resolve(readStoredReferral()), timeoutMs)
     ),

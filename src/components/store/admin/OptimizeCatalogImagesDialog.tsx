@@ -55,6 +55,7 @@ interface OptimizeCatalogImagesDialogProps {
   onClose: () => void;
   token: string;
   supabase: SupabaseClient | null;
+  storageFolder?: string;
   onCompleted: (updatedImages: Record<string, string>) => void;
 }
 
@@ -104,6 +105,7 @@ function OptimizeCatalogImagesDialogContent({
   onClose,
   token,
   supabase,
+  storageFolder = STORE_KEY,
   onCompleted,
 }: OptimizeCatalogImagesDialogProps) {
   const [scanNonce, setScanNonce] = useState(0);
@@ -296,7 +298,7 @@ function OptimizeCatalogImagesDialogContent({
             const uploaded = await uploadOptimizedImageToStorage(
               supabase,
               STORAGE_BUCKET,
-              STORE_KEY,
+              storageFolder,
               result
             );
             cached = {
@@ -329,7 +331,7 @@ function OptimizeCatalogImagesDialogContent({
               STORAGE_BUCKET,
               supabaseUrl
             );
-            if (oldStoragePath?.startsWith(`${STORE_KEY}/`)) {
+            if (oldStoragePath?.startsWith(`${storageFolder}/`)) {
               obsoleteStoragePaths.add(oldStoragePath);
             }
           }
