@@ -6,6 +6,7 @@ import { X } from "lucide-react";
 interface AdminModalProps {
   open: boolean;
   onClose: () => void;
+  closable?: boolean;
   title: React.ReactNode;
   description?: string;
   maxWidthClass?: string;
@@ -16,6 +17,7 @@ interface AdminModalProps {
 export function AdminModal({
   open,
   onClose,
+  closable = true,
   title,
   description,
   maxWidthClass = "max-w-2xl",
@@ -23,13 +25,13 @@ export function AdminModal({
   footer,
 }: AdminModalProps) {
   useEffect(() => {
-    if (!open) return;
+    if (!open || !closable) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  }, [open, closable, onClose]);
 
   if (!open) return null;
 
@@ -38,7 +40,7 @@ export function AdminModal({
       role="dialog"
       aria-modal="true"
       className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/60 p-3 backdrop-blur-xs sm:p-5"
-      onClick={onClose}
+      onClick={closable ? onClose : undefined}
     >
       <div
         className={`flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-3xl border border-zinc-200 bg-white shadow-2xl ${maxWidthClass}`}
@@ -55,14 +57,16 @@ export function AdminModal({
               </p>
             )}
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Cerrar ventana"
-            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-950"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          {closable && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Cerrar ventana"
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-950"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4 sm:px-6">{children}</div>

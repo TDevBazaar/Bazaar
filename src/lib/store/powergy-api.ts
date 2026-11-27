@@ -20,6 +20,7 @@ export function getPowergyApiServerBase(): string {
 
 export type AffiliateCommissionType = "percent" | "fixed_usd";
 export type AffiliateOrderRouting = "owner" | "affiliate";
+export type CommissionPayoutStatus = "pending" | "paid" | "confirmed" | "disputed";
 
 export interface ApiProductOwner {
   id: string;
@@ -171,6 +172,14 @@ export interface ApiOrder {
   whatsAppRecipientPhone?: string | null;
   whatsAppRecipientName?: string | null;
   totalAffiliateCommissionUsd?: number | null;
+  buyerAdminUserId?: string | null;
+  buyerDisplayName?: string | null;
+  buyerWhatsAppPhone?: string | null;
+  commissionStatus?: CommissionPayoutStatus | null;
+  commissionPaidAt?: string | null;
+  commissionPaymentNote?: string | null;
+  commissionConfirmedAt?: string | null;
+  commissionDisputeNote?: string | null;
 }
 
 /* ── Mapeo al modelo de la tienda ─────────────────────────────── */

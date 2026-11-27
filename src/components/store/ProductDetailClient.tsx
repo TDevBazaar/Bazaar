@@ -22,6 +22,7 @@ import {
   ZoomIn,
 } from "lucide-react";
 import { toast } from "sonner";
+import { CompleteProfileModal } from "@/components/store/CompleteProfileModal";
 import {
   ImagePreviewModal,
   type PreviewImageData,
@@ -31,6 +32,7 @@ import { ProductCard } from "@/components/store/ProductCard";
 import { QuantityStepper } from "@/components/store/QuantityStepper";
 import {
   fetchMyAffiliatedProductIds,
+  isProfileComplete,
   registerCurrentSeller,
   subscribeAffiliates,
   type AdminSellerProfile,
@@ -77,6 +79,7 @@ export function ProductDetailClient({
   );
   const [affiliatedIds, setAffiliatedIds] = useState<string[]>([]);
   const [affiliating, setAffiliating] = useState(false);
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -231,6 +234,11 @@ export function ProductDetailClient({
             : "Inicia sesión en el panel para afiliarte."
         );
       }
+      return;
+    }
+
+    if (!isAffiliated && !isProfileComplete(viewerProfile)) {
+      setProfileModalOpen(true);
       return;
     }
 
@@ -626,6 +634,18 @@ export function ProductDetailClient({
           </div>
         </section>
       )}
+
+      <CompleteProfileModal
+        key={viewerProfile?.id ?? "product-aff-onboarding"}
+        open={profileModalOpen && Boolean(authToken && viewerProfile && !isProfileComplete(viewerProfile))}
+        token={authToken}
+        profile={viewerProfile}
+        contextLabel="afiliarte a productos en Deve Tienda"
+        onCompleted={(updated) => {
+          setViewerProfile(updated);
+          setProfileModalOpen(false);
+        }}
+      />
 
       <ImagePreviewModal
         image={previewImage}

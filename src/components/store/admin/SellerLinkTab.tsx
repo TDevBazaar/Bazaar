@@ -86,7 +86,14 @@ export function SellerLinkTab({
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanName = displayName.trim() || null;
+    const cleanName = displayName.trim();
+    if (cleanName.length < 2) {
+      toast.error(
+        "Ingresa tu nombre visible o nombre de tienda (mínimo 2 caracteres)."
+      );
+      return;
+    }
+
     const rawHandle = handle.trim();
     const validHandle = rawHandle ? normalizeHandle(rawHandle) : null;
     if (rawHandle && !validHandle) {
@@ -98,9 +105,9 @@ export function SellerLinkTab({
 
     const rawPhone = whatsAppPhone.trim();
     const validPhone = rawPhone ? normalizeWhatsAppPhone(rawPhone) : null;
-    if (rawPhone && !validPhone) {
+    if (!validPhone) {
       toast.error(
-        "Ingresa un número de WhatsApp válido con código de país (7 a 15 dígitos, ej. 5352529615)."
+        "Tu número de WhatsApp con código de país es obligatorio para comprar y vender (7 a 15 dígitos, ej. 5352529615)."
       );
       return;
     }

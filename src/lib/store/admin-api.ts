@@ -9,6 +9,7 @@ import {
   type ApiCategory,
   type ApiPage,
   type ApiProduct,
+  type CommissionPayoutStatus,
 } from "./powergy-api";
 
 export const STORE_QUERY = `store=${encodeURIComponent(STORE_KEY)}`;
@@ -67,6 +68,12 @@ export interface AdminOrderListItem {
   whatsAppRecipientPhone?: string | null;
   whatsAppRecipientName?: string | null;
   totalAffiliateCommissionUsd?: number | null;
+  buyerAdminUserId?: string | null;
+  buyerDisplayName?: string | null;
+  buyerWhatsAppPhone?: string | null;
+  commissionStatus?: CommissionPayoutStatus | null;
+  commissionPaidAt?: string | null;
+  commissionConfirmedAt?: string | null;
 }
 
 export interface AdminOrder {
@@ -94,6 +101,20 @@ export interface AdminOrder {
   whatsAppRecipientPhone?: string | null;
   whatsAppRecipientName?: string | null;
   totalAffiliateCommissionUsd?: number | null;
+  buyerAdminUserId?: string | null;
+  buyerDisplayName?: string | null;
+  buyerWhatsAppPhone?: string | null;
+  commissionStatus?: CommissionPayoutStatus | null;
+  commissionPaidAt?: string | null;
+  commissionPaymentNote?: string | null;
+  commissionConfirmedAt?: string | null;
+  commissionDisputeNote?: string | null;
+}
+
+export function isProfileComplete(
+  profile: Pick<AdminSellerProfile, "displayName" | "whatsAppPhone"> | null | undefined
+): boolean {
+  return Boolean(profile?.displayName?.trim() && profile?.whatsAppPhone?.trim());
 }
 
 export interface AdminSellerProfile {
@@ -141,6 +162,9 @@ export interface OrderMetrics {
   closedDuringPeriod: number;
   totalAffiliateCommissionUsd?: number | null;
   closedAffiliateCommissionUsd?: number | null;
+  pendingAffiliateCommissionUsd?: number | null;
+  paidAffiliateCommissionUsd?: number | null;
+  pendingCommissionOrders?: number;
 }
 
 export interface ProductPayload {
@@ -369,9 +393,10 @@ export interface AdminProductsQuery {
 
 export interface AdminOrdersQuery {
   status?: string;
+  commissionStatus?: CommissionPayoutStatus;
   q?: string;
   referral?: string;
-  scope?: "all" | "owner" | "affiliate";
+  scope?: "all" | "owner" | "affiliate" | "buyer";
   hasUnpriced?: boolean;
   from?: string;
   to?: string;
@@ -383,7 +408,7 @@ export interface AdminOrdersQuery {
 export interface OrderMetricsQuery {
   from?: string;
   to?: string;
-  scope?: "all" | "owner" | "affiliate";
+  scope?: "all" | "owner" | "affiliate" | "buyer";
   signal?: AbortSignal;
 }
 
@@ -488,6 +513,9 @@ export function fetchAdminOrders(
     pageSize: String(options.pageSize ?? 20),
   });
   if (options.status?.trim()) params.set("status", options.status.trim());
+  if (options.commissionStatus?.trim()) {
+    params.set("commissionStatus", options.commissionStatus.trim());
+  }
   if (options.q?.trim()) params.set("q", options.q.trim());
   if (options.referral?.trim()) params.set("referral", options.referral.trim());
   if (options.scope && options.scope !== "all") {
@@ -614,6 +642,49 @@ export function closeOrder(
     {
       method: "POST",
       body: payload,
+      token,
+    }
+  );
+}
+
+export function markOrderCommissionPaid(
+  token: string,
+  id: string,
+  note?: string | null
+): Promise<AdminOrder> {
+  return apiSend<AdminOrder>(
+    `admin/orders/${encodeURIComponent(id)}/commission/pay?${STORE_QUERY}`,
+    {
+      method: "POST",
+      body: { note: note?.trim() || null },
+      token,
+    }
+  );
+}
+
+export function confirmOrderCommissionPaid(
+  token: string,
+  id: string
+): Promise<AdminOrder> {
+  return apiSend<AdminOrder>(
+    `admin/orders/${encodeURIComponent(id)}/commission/confirm?${STORE_QUERY}`,
+    {
+      method: "POST",
+      token,
+    }
+  );
+}
+
+export function disputeOrderCommission(
+  token: string,
+  id: string,
+  reason: string
+): Promise<AdminOrder> {
+  return apiSend<AdminOrder>(
+    `admin/orders/${encodeURIComponent(id)}/commission/dispute?${STORE_QUERY}`,
+    {
+      method: "POST",
+      body: { reason: reason.trim() },
       token,
     }
   );

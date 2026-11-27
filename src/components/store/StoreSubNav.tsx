@@ -92,8 +92,8 @@ export function StoreSubNav() {
 
           <Link
             href="/tienda/admin"
-            aria-label="Vender o gestionar mi panel"
-            title="Publicar productos, afiliaciones y panel"
+            aria-label="Mi cuenta: compras, ventas y afiliaciones"
+            title="Mi cuenta: compras, publicar productos y afiliaciones"
             className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-full border px-3 transition ${
               pathname === "/tienda/admin"
                 ? "border-violet-300 bg-violet-50 text-violet-800"
@@ -101,7 +101,7 @@ export function StoreSubNav() {
             }`}
           >
             <ShieldCheck className="h-3.5 w-3.5 text-[#6018F8]" />
-            <span className="text-xs font-semibold">Vender</span>
+            <span className="text-xs font-semibold">Mi cuenta</span>
           </Link>
         </div>
       </div>

@@ -6,15 +6,24 @@ import {
   CheckCircle2,
   ClipboardList,
   Handshake,
+  Loader2,
   MessageCircle,
+  ShieldCheck,
   ShoppingBag,
   Store,
+  UserCheck,
 } from "lucide-react";
+import { CompleteProfileModal } from "@/components/store/CompleteProfileModal";
 import {
   ImagePreviewModal,
   ZoomableThumb,
   type PreviewImageData,
 } from "@/components/store/ImagePreviewModal";
+import {
+  isProfileComplete,
+  registerCurrentSeller,
+  type AdminSellerProfile,
+} from "@/lib/store/admin-api";
 import { MAX_ORDER_LINES, useShopStore } from "@/lib/store/cart-store";
 import {
   cartSubtotal,
@@ -31,6 +40,7 @@ import {
   readStoredReferral,
   resolveActiveReferralForCheckout,
 } from "@/lib/store/referral";
+import { getSupabaseClient } from "@/lib/store/supabase";
 import type { CartLine, OrderSummary } from "@/lib/store/types";
 import { buildStoreWhatsAppUrl } from "@/lib/store/whatsapp";
 
@@ -64,6 +74,17 @@ function buildWhatsAppMessage(
     .join("\n");
 
   const extraAffiliateLines: string[] = [];
+  if (order.buyerDisplayName || order.buyerWhatsAppPhone) {
+    const buyerLabel = [
+      order.buyerDisplayName?.trim(),
+      order.buyerWhatsAppPhone ? `(${order.buyerWhatsAppPhone})` : null,
+    ]
+      .filter(Boolean)
+      .join(" ");
+    if (buyerLabel) {
+      extraAffiliateLines.push(`👤 Comprador: ${buyerLabel}`);
+    }
+  }
   if (order.affiliateHandle) {
     const commText =
       typeof order.totalAffiliateCommissionUsd === "number" &&
@@ -109,8 +130,136 @@ export function CheckoutClient() {
     string | null
   >(null);
 
+  // Sesión del comprador y perfil obligatorio (nombre + WhatsApp)
+  const [authChecking, setAuthChecking] = useState(true);
+  const [authToken, setAuthToken] = useState("");
+  const [googleName, setGoogleName] = useState<string | null>(null);
+  const [buyerProfile, setBuyerProfile] = useState<AdminSellerProfile | null>(
+    null
+  );
+  const [googleLoading, setGoogleLoading] = useState(false);
+
   const subtotal = cartSubtotal(lines);
   const unpriced = hasUnpricedLines(lines);
+
+  useEffect(() => {
+    let active = true;
+    let client: ReturnType<typeof getSupabaseClient> | null = null;
+    try {
+      client = getSupabaseClient();
+    } catch {
+      Promise.resolve().then(() => {
+        if (active) setAuthChecking(false);
+      });
+      return () => {
+        active = false;
+      };
+    }
+
+    const loadSession = async (
+      session: {
+        access_token: string;
+        user: { user_metadata?: Record<string, unknown> };
+      } | null
+    ) => {
+      if (!active) return;
+      if (!session?.access_token) {
+        setAuthToken("");
+        setBuyerProfile(null);
+        setGoogleName(null);
+        setAuthChecking(false);
+        return;
+      }
+
+      const tok = session.access_token;
+      const meta = session.user.user_metadata ?? {};
+      const displayName =
+        (typeof meta.full_name === "string" && meta.full_name) ||
+        (typeof meta.name === "string" && meta.name) ||
+        null;
+      const avatarUrl =
+        (typeof meta.avatar_url === "string" && meta.avatar_url) ||
+        (typeof meta.picture === "string" && meta.picture) ||
+        null;
+
+      setAuthToken(tok);
+      setGoogleName(displayName);
+      try {
+        const prof = await registerCurrentSeller(tok, { displayName, avatarUrl });
+        if (!active) return;
+        setBuyerProfile(prof);
+      } catch (err) {
+        if (!active) return;
+        setSendError(
+          err instanceof Error
+            ? err.message
+            : "No pudimos verificar tu cuenta."
+        );
+      } finally {
+        if (active) setAuthChecking(false);
+      }
+    };
+
+    const {
+      data: { subscription },
+    } = client.auth.onAuthStateChange((_event, nextSession) => {
+      void loadSession(nextSession);
+    });
+
+    client.auth
+      .getSession()
+      .then(({ data }) => void loadSession(data.session))
+      .catch(() => {
+        if (active) setAuthChecking(false);
+      });
+
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const handleGoogleSignInForCheckout = async () => {
+    setGoogleLoading(true);
+    setSendError("");
+    try {
+      const client = getSupabaseClient();
+      const origin = window.location.origin;
+      const { error } = await client.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${origin}/auth/callback?next=${encodeURIComponent("/tienda/checkout")}`,
+        },
+      });
+      if (error) {
+        setSendError(error.message);
+        setGoogleLoading(false);
+      }
+    } catch (err) {
+      setSendError(
+        err instanceof Error
+          ? err.message
+          : "No pudimos iniciar sesión con Google."
+      );
+      setGoogleLoading(false);
+    }
+  };
+
+  const handleCheckoutSignOut = async () => {
+    try {
+      const client = getSupabaseClient();
+      await client.auth.signOut();
+    } catch {
+      /* Ignorar */
+    }
+    setAuthToken("");
+    setBuyerProfile(null);
+  };
+
+  const profileComplete = isProfileComplete(buyerProfile);
+  const needsProfilePopup = Boolean(
+    authToken && buyerProfile && !buyerProfile.isSuspended && !profileComplete
+  );
 
   // Agrupa automáticamente los artículos por vendedor (1 pedido y 1 botón WA por vendedor)
   const sellerGroups = useMemo<SellerOrderGroup[]>(() => {
@@ -299,6 +448,26 @@ export function CheckoutClient() {
 
   const handleConfirm = async (e: FormEvent) => {
     e.preventDefault();
+    if (!authToken || !buyerProfile) {
+      setSendError(
+        "Inicia sesión con Google para confirmar tu pedido en Deve Tienda."
+      );
+      return;
+    }
+    if (buyerProfile.isSuspended) {
+      setSendError(
+        buyerProfile.suspensionReason
+          ? `Tu cuenta tiene una restricción activa: ${buyerProfile.suspensionReason}`
+          : "Tu cuenta tiene una restricción activa y no puede realizar compras."
+      );
+      return;
+    }
+    if (!profileComplete) {
+      setSendError(
+        "Completa tu nombre y número de WhatsApp para continuar con la compra."
+      );
+      return;
+    }
     if (sellerGroups.some((g) => g.lines.length > MAX_ORDER_LINES)) {
       setSendError(
         `Cada pedido admite hasta ${MAX_ORDER_LINES} artículos distintos por vendedor. Ajusta tu carrito antes de continuar.`
@@ -317,6 +486,7 @@ export function CheckoutClient() {
       for (const group of sellerGroups) {
         const respuesta = await apiSend<ApiOrder>("orders", {
           method: "POST",
+          token: authToken,
           body: {
             store: STORE_KEY,
             idempotencyKey: crypto.randomUUID(),
@@ -579,18 +749,88 @@ export function CheckoutClient() {
             </p>
           )}
 
-          <button
-            type="submit"
-            disabled={sending}
-            className="mt-6 inline-flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#6018F8] px-6 text-sm font-semibold text-white shadow-md shadow-violet-600/25 transition hover:bg-[#5010E8] disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <MessageCircle className="h-4 w-4" />
-            {sending
-              ? "Registrando pedido…"
-              : sellerGroups.length > 1
-                ? `Confirmar ${sellerGroups.length} pedidos`
-                : "Confirmar y abrir WhatsApp"}
-          </button>
+          {authChecking ? (
+            <div className="mt-6 flex h-12 items-center justify-center gap-2 rounded-full border border-zinc-200 bg-zinc-50 text-xs font-semibold text-zinc-600">
+              <Loader2 className="h-4 w-4 animate-spin text-[#6018F8]" />
+              Comprobando tu cuenta…
+            </div>
+          ) : !authToken || !buyerProfile ? (
+            <div className="mt-6 space-y-3 rounded-2xl border border-violet-200 bg-violet-50/60 p-4 text-center">
+              <p className="inline-flex items-center justify-center gap-1.5 text-xs font-bold text-violet-950">
+                <ShieldCheck className="h-4 w-4 text-[#6018F8]" />
+                Inicia sesión para confirmar tu pedido
+              </p>
+              <p className="text-[11px] leading-relaxed text-zinc-600">
+                Usamos el nombre y WhatsApp de tu cuenta automáticamente (sin
+                formularios repetidos) para que el vendedor y el afiliado puedan
+                dar seguimiento a tu solicitud. Tu carrito se mantendrá intacto.
+              </p>
+              <button
+                type="button"
+                onClick={() => void handleGoogleSignInForCheckout()}
+                disabled={googleLoading}
+                className="inline-flex h-11 w-full items-center justify-center gap-2.5 rounded-full border border-zinc-300 bg-white px-5 text-xs font-bold text-zinc-900 shadow-2xs transition hover:border-violet-400 hover:bg-violet-50/40 disabled:opacity-50"
+              >
+                {googleLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin text-[#6018F8]" />
+                ) : (
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      fill="#4285F4"
+                      d="M23.49 12.27c0-.79-.07-1.54-.2-2.27H12v4.3h6.44a5.5 5.5 0 0 1-2.39 3.61v3h3.87c2.26-2.08 3.57-5.15 3.57-8.64Z"
+                    />
+                    <path
+                      fill="#34A853"
+                      d="M12 24c3.24 0 5.95-1.07 7.93-2.91l-3.87-3c-1.07.72-2.44 1.15-4.06 1.15-3.12 0-5.77-2.11-6.71-4.95H1.3v3.09A12 12 0 0 0 12 24Z"
+                    />
+                    <path
+                      fill="#FBBC05"
+                      d="M5.29 14.29A7.22 7.22 0 0 1 4.91 12c0-.79.14-1.56.38-2.29V6.62H1.3A12 12 0 0 0 0 12c0 1.94.46 3.77 1.3 5.38l3.99-3.09Z"
+                    />
+                    <path
+                      fill="#EA4335"
+                      d="M12 4.76c1.76 0 3.34.61 4.58 1.8l3.44-3.44C17.95 1.19 15.24 0 12 0A12 12 0 0 0 1.3 6.62l3.99 3.09c.94-2.84 3.59-4.95 6.71-4.95Z"
+                    />
+                  </svg>
+                )}
+                Continuar con Google y confirmar pedido
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="mt-5 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-emerald-200/80 bg-emerald-50/60 px-3.5 py-2.5 text-xs">
+                <span className="inline-flex items-center gap-1.5 font-semibold text-emerald-950">
+                  <UserCheck className="h-3.5 w-3.5 text-emerald-600" />
+                  Comprando como{" "}
+                  <strong>{buyerProfile.displayName || "Tu cuenta"}</strong>
+                  {buyerProfile.whatsAppPhone && (
+                    <span className="font-mono text-[11px] font-medium text-emerald-800">
+                      · WA +{buyerProfile.whatsAppPhone}
+                    </span>
+                  )}
+                </span>
+                <Link
+                  href="/tienda/admin?tab=enlace"
+                  className="text-[11px] font-semibold text-violet-700 hover:underline"
+                >
+                  Editar datos
+                </Link>
+              </div>
+
+              <button
+                type="submit"
+                disabled={sending || !profileComplete || buyerProfile.isSuspended}
+                className="mt-4 inline-flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#6018F8] px-6 text-sm font-semibold text-white shadow-md shadow-violet-600/25 transition hover:bg-[#5010E8] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <MessageCircle className="h-4 w-4" />
+                {sending
+                  ? "Registrando pedido…"
+                  : sellerGroups.length > 1
+                    ? `Confirmar ${sellerGroups.length} pedidos`
+                    : "Confirmar y abrir WhatsApp"}
+              </button>
+            </>
+          )}
 
           <Link
             href="/tienda/carrito"
@@ -600,6 +840,17 @@ export function CheckoutClient() {
           </Link>
         </section>
       </form>
+
+      <CompleteProfileModal
+        key={buyerProfile?.id ?? "checkout-onboarding"}
+        open={needsProfilePopup}
+        token={authToken}
+        profile={buyerProfile}
+        defaultName={googleName}
+        contextLabel="confirmar tu compra en Deve Tienda"
+        onCompleted={setBuyerProfile}
+        onSignOut={handleCheckoutSignOut}
+      />
 
       <ImagePreviewModal
         image={previewImage}

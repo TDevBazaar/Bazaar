@@ -3,10 +3,12 @@
 import { useEffect, useState } from "react";
 import {
   AlertTriangle,
+  BadgeCheck,
   Bell,
   Check,
   CheckCheck,
   ClipboardList,
+  DollarSign,
   Handshake,
   Loader2,
   PackagePlus,
@@ -40,6 +42,21 @@ function notificationIcon(type: string) {
       return {
         icon: Handshake,
         badge: "bg-emerald-50 text-emerald-700 border-emerald-200",
+      };
+    case "affiliate_commission_paid":
+      return {
+        icon: DollarSign,
+        badge: "bg-sky-50 text-sky-700 border-sky-200",
+      };
+    case "affiliate_commission_confirmed":
+      return {
+        icon: BadgeCheck,
+        badge: "bg-emerald-50 text-emerald-700 border-emerald-200",
+      };
+    case "affiliate_commission_disputed":
+      return {
+        icon: AlertTriangle,
+        badge: "bg-rose-50 text-rose-700 border-rose-200",
       };
     case "seller_order_received":
       return {

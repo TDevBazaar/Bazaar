@@ -3,14 +3,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  AlertTriangle,
+  BadgeCheck,
   Calendar,
   CheckCircle2,
   ClipboardList,
+  DollarSign,
   Link2,
   Loader2,
+  MessageCircle,
   Search,
   SlidersHorizontal,
   Trash2,
+  User,
   X,
   XCircle,
 } from "lucide-react";
@@ -26,10 +31,13 @@ import {
   CANCELLATION_REASONS,
   STATUS_LABELS,
   closeOrder,
+  confirmOrderCommissionPaid,
+  disputeOrderCommission,
   fetchAdminOrders,
   fetchAdminProducts,
   fetchOrder,
   fetchOrderMetrics,
+  markOrderCommissionPaid,
   type AdminOrder,
   type AdminOrderListItem,
   type AdminSellerProfile,
@@ -43,8 +51,12 @@ import {
   type OrderDatePreset,
 } from "@/lib/store/admin-dates";
 import { formatDate, formatPrice, formatPriceLabel } from "@/lib/store/format";
-import { fetchProductsByIds } from "@/lib/store/powergy-api";
+import {
+  fetchProductsByIds,
+  type CommissionPayoutStatus,
+} from "@/lib/store/powergy-api";
 import { normalizeReferralCode } from "@/lib/store/referral";
+import { buildStoreWhatsAppUrl } from "@/lib/store/whatsapp";
 
 const ADMIN_PAGE_SIZE = 20;
 
@@ -63,6 +75,46 @@ const STATUS_STYLES: Record<string, string> = {
   closed: "bg-emerald-100 text-emerald-800",
   cancelled: "bg-rose-100 text-rose-700",
 };
+
+const COMMISSION_STATUS_META: Record<
+  CommissionPayoutStatus,
+  { label: string; badgeClass: string }
+> = {
+  pending: {
+    label: "Falta pagar comisión",
+    badgeClass: "bg-amber-100 text-amber-900 border border-amber-200",
+  },
+  paid: {
+    label: "Comisión pagada (por confirmar)",
+    badgeClass: "bg-sky-100 text-sky-900 border border-sky-200",
+  },
+  confirmed: {
+    label: "Comisión confirmada",
+    badgeClass: "bg-emerald-100 text-emerald-900 border border-emerald-200",
+  },
+  disputed: {
+    label: "Pago reportado",
+    badgeClass: "bg-rose-100 text-rose-800 border border-rose-200",
+  },
+};
+
+function resolveEffectiveCommissionStatus(order: {
+  status: string;
+  commissionStatus?: CommissionPayoutStatus | null;
+  totalAffiliateCommissionUsd?: number | null;
+  affiliateHandle?: string | null;
+}): CommissionPayoutStatus | null {
+  if (order.status !== "closed") return null;
+  if (order.commissionStatus) return order.commissionStatus;
+  if (
+    order.affiliateHandle &&
+    typeof order.totalAffiliateCommissionUsd === "number" &&
+    order.totalAffiliateCommissionUsd > 0
+  ) {
+    return "pending";
+  }
+  return null;
+}
 
 interface EditableLine {
   productId: string;
@@ -118,9 +170,12 @@ export function OrdersAdminTab({
   const [statusFilter, setStatusFilter] = useState<
     "all" | "requested" | "closed" | "cancelled"
   >("all");
-  const [scopeFilter, setScopeFilter] = useState<"all" | "owner" | "affiliate">(
-    "all"
-  );
+  const [commissionFilter, setCommissionFilter] = useState<
+    "all" | CommissionPayoutStatus
+  >("all");
+  const [scopeFilter, setScopeFilter] = useState<
+    "all" | "owner" | "affiliate" | "buyer"
+  >("all");
   const [referralFilter, setReferralFilter] = useState("all");
   const [priceFilter, setPriceFilter] = useState<"all" | "unpriced" | "priced">(
     "all"
@@ -130,7 +185,7 @@ export function OrdersAdminTab({
     {}
   );
 
-  // Detalle / cierre de solicitud
+  // Detalle / cierre de solicitud y liquidación de comisión
   const [selectedOrder, setSelectedOrder] = useState<AdminOrderListItem | null>(
     null
   );
@@ -143,6 +198,10 @@ export function OrdersAdminTab({
   const [cancelNote, setCancelNote] = useState("");
   const [confirmUnpriced, setConfirmUnpriced] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [paymentNote, setPaymentNote] = useState("");
+  const [disputeOpen, setDisputeOpen] = useState(false);
+  const [disputeReason, setDisputeReason] = useState("");
+  const [commissionBusy, setCommissionBusy] = useState(false);
 
   const productImagesRef = useRef(productImages);
   useEffect(() => {
@@ -204,7 +263,7 @@ export function OrdersAdminTab({
     onMetricsLoaded,
   ]);
 
-  const ordersRequestKey = `${token}|${page}|${refreshTick}|${scopeFilter}|${statusFilter}|${debouncedQuery}|${referralFilter}|${priceFilter}|${resolvedDates.ordersFrom ?? ""}|${resolvedDates.ordersTo ?? ""}`;
+  const ordersRequestKey = `${token}|${page}|${refreshTick}|${scopeFilter}|${statusFilter}|${commissionFilter}|${debouncedQuery}|${referralFilter}|${priceFilter}|${resolvedDates.ordersFrom ?? ""}|${resolvedDates.ordersTo ?? ""}`;
   const loading =
     Boolean(token) &&
     !resolvedDates.validationError &&
@@ -219,6 +278,8 @@ export function OrdersAdminTab({
 
     fetchAdminOrders(token, {
       status: statusFilter === "all" ? undefined : statusFilter,
+      commissionStatus:
+        commissionFilter === "all" ? undefined : commissionFilter,
       scope: scopeFilter,
       q: debouncedQuery || undefined,
       referral: referralFilter === "all" ? undefined : referralFilter,
@@ -283,6 +344,7 @@ export function OrdersAdminTab({
     refreshTick,
     scopeFilter,
     statusFilter,
+    commissionFilter,
     debouncedQuery,
     referralFilter,
     priceFilter,
@@ -353,6 +415,9 @@ export function OrdersAdminTab({
       setCancelReason("price");
       setCancelNote("");
       setConfirmUnpriced(false);
+      setPaymentNote("");
+      setDisputeOpen(false);
+      setDisputeReason("");
       setLoadingDetail(true);
       try {
         const full = await fetchOrder(token, item.id);
@@ -453,11 +518,78 @@ export function OrdersAdminTab({
   }, [targetOrder, orders, token, loadingDetail, resolveOrderImages]);
 
   const closeModal = () => {
-    if (saving) return;
+    if (saving || commissionBusy) return;
     setSelectedOrder(null);
     setDetail(null);
+    setPaymentNote("");
+    setDisputeOpen(false);
+    setDisputeReason("");
     if (targetOrder) {
       router.replace("/tienda/admin", { scroll: false });
+    }
+  };
+
+  const handleMarkCommissionPaid = async () => {
+    if (!detail || commissionBusy) return;
+    setCommissionBusy(true);
+    try {
+      const updated = await markOrderCommissionPaid(token, detail.id, paymentNote);
+      setDetail(updated);
+      setPaymentNote("");
+      toast.success("Comisión marcada como pagada. Se notificó al afiliado.");
+      onMutated();
+    } catch (err) {
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "No se pudo registrar el pago de la comisión."
+      );
+    } finally {
+      setCommissionBusy(false);
+    }
+  };
+
+  const handleConfirmCommission = async () => {
+    if (!detail || commissionBusy) return;
+    setCommissionBusy(true);
+    try {
+      const updated = await confirmOrderCommissionPaid(token, detail.id);
+      setDetail(updated);
+      setDisputeOpen(false);
+      setDisputeReason("");
+      toast.success("¡Confirmado! El pago de tu comisión quedó registrado.");
+      onMutated();
+    } catch (err) {
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "No se pudo confirmar la comisión."
+      );
+    } finally {
+      setCommissionBusy(false);
+    }
+  };
+
+  const handleDisputeCommission = async () => {
+    if (!detail || commissionBusy) return;
+    if (disputeReason.trim().length < 3) {
+      toast.error("Describe brevemente el problema con el pago.");
+      return;
+    }
+    setCommissionBusy(true);
+    try {
+      const updated = await disputeOrderCommission(token, detail.id, disputeReason);
+      setDetail(updated);
+      setDisputeOpen(false);
+      setDisputeReason("");
+      toast.warning("Reporte enviado al vendedor y a moderación.");
+      onMutated();
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "No se pudo enviar el reporte."
+      );
+    } finally {
+      setCommissionBusy(false);
     }
   };
 
@@ -542,6 +674,7 @@ export function OrdersAdminTab({
   const hasFilters = Boolean(
     debouncedQuery ||
       statusFilter !== "all" ||
+      commissionFilter !== "all" ||
       referralFilter !== "all" ||
       priceFilter !== "all" ||
       dateFilter.preset !== "all"
@@ -551,21 +684,32 @@ export function OrdersAdminTab({
     setQuery("");
     setDebouncedQuery("");
     setStatusFilter("all");
+    setCommissionFilter("all");
     setReferralFilter("all");
     setPriceFilter("all");
     setDateFilter(DEFAULT_ORDER_DATE_FILTER);
     setPage(1);
   };
 
+  const canManageDetailOrder = Boolean(
+    detail &&
+      detail.status === "requested" &&
+      (sellerProfile?.role === "admin" ||
+        (Boolean(sellerProfile?.id) &&
+          (detail.ownerAdminUserId === sellerProfile?.id ||
+            detail.items.some((i) => i.ownerAdminUserId === sellerProfile?.id))))
+  );
+
   return (
     <div className="space-y-4">
-      {/* Filtro de rol: Mis ventas (dueño) vs Mis referidos (afiliado) */}
+      {/* Filtro de rol: Mis ventas (dueño), Mis referidos (afiliado), Mis compras */}
       <div className="flex flex-wrap items-center gap-1.5">
         {(
           [
             { id: "all", label: "Todas mis solicitudes" },
             { id: "owner", label: "Mis ventas (dueño)" },
             { id: "affiliate", label: "Mis referidos (afiliado)" },
+            { id: "buyer", label: "Mis compras" },
           ] as const
         ).map((opt) => (
           <button
@@ -708,12 +852,27 @@ export function OrdersAdminTab({
               Estimado total: {formatPrice(metrics.estimatedValueUsd ?? 0)}
             </p>
             {(metrics.totalAffiliateCommissionUsd ?? 0) > 0 && (
-              <p className="mt-0.5 text-[11px] font-semibold text-emerald-700 tabular-nums">
-                Comisiones afiliados: {formatPrice(metrics.closedAffiliateCommissionUsd ?? 0)}{" "}
-                <span className="font-normal text-zinc-500">
-                  (est. {formatPrice(metrics.totalAffiliateCommissionUsd ?? 0)})
-                </span>
-              </p>
+              <div className="mt-1 space-y-0.5 text-[11px] tabular-nums">
+                {(metrics.pendingAffiliateCommissionUsd ?? 0) > 0 && (
+                  <p className="font-bold text-amber-700">
+                    Por pagar: {formatPrice(metrics.pendingAffiliateCommissionUsd ?? 0)}
+                    {metrics.pendingCommissionOrders
+                      ? ` (${metrics.pendingCommissionOrders})`
+                      : ""}
+                  </p>
+                )}
+                {(metrics.paidAffiliateCommissionUsd ?? 0) > 0 && (
+                  <p className="font-semibold text-emerald-700">
+                    Pagadas: {formatPrice(metrics.paidAffiliateCommissionUsd ?? 0)}
+                  </p>
+                )}
+                {!(metrics.pendingAffiliateCommissionUsd ?? 0) &&
+                  !(metrics.paidAffiliateCommissionUsd ?? 0) && (
+                    <p className="font-semibold text-zinc-500">
+                      Comisión est.: {formatPrice(metrics.totalAffiliateCommissionUsd ?? 0)}
+                    </p>
+                  )}
+              </div>
             )}
           </div>
         </div>
@@ -727,7 +886,7 @@ export function OrdersAdminTab({
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Buscar por referencia (DE-...), producto o vendedor..."
+            placeholder="Buscar por referencia (DE-...), comprador, teléfono, producto o vendedor..."
             className="h-10 w-full rounded-full border border-zinc-200 bg-white pl-10 pr-8 text-sm text-zinc-950 focus:border-violet-500 focus:outline-none"
           />
           {query && (
@@ -761,7 +920,7 @@ export function OrdersAdminTab({
       </div>
 
       {showFilters && (
-        <div className="grid gap-3 rounded-2xl border border-zinc-200 bg-zinc-50/80 p-4 sm:grid-cols-3">
+        <div className="grid gap-3 rounded-2xl border border-zinc-200 bg-zinc-50/80 p-4 sm:grid-cols-2 lg:grid-cols-4">
           <select
             value={statusFilter}
             onChange={(e) => {
@@ -776,6 +935,23 @@ export function OrdersAdminTab({
             <option value="requested">Solicitada (abierta)</option>
             <option value="closed">Vendida</option>
             <option value="cancelled">Cancelada</option>
+          </select>
+
+          <select
+            value={commissionFilter}
+            onChange={(e) => {
+              setCommissionFilter(
+                e.target.value as "all" | CommissionPayoutStatus
+              );
+              setPage(1);
+            }}
+            className="h-9 rounded-xl border border-zinc-200 bg-white px-3 text-xs font-medium text-zinc-800"
+          >
+            <option value="all">Comisiones: Todas</option>
+            <option value="pending">Falta pagar comisión</option>
+            <option value="paid">Comisión pagada (por confirmar)</option>
+            <option value="confirmed">Comisión confirmada</option>
+            <option value="disputed">Comisión reportada</option>
           </select>
 
           <select
@@ -855,76 +1031,103 @@ export function OrdersAdminTab({
         </div>
       ) : (
         <ul className="space-y-2.5">
-          {orders.map((order) => (
-            <li
-              key={order.id}
-              className="flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between"
-            >
-              <div className="min-w-0 space-y-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-mono text-sm font-bold text-zinc-950">
-                    #{order.reference}
-                  </span>
-                  <span
-                    className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
-                      STATUS_STYLES[order.status] ?? "bg-zinc-100 text-zinc-700"
-                    }`}
-                  >
-                    {STATUS_LABELS[order.status] ?? order.status}
-                  </span>
-                  {(order.affiliateHandle || order.referralCode) && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2.5 py-0.5 text-[11px] font-semibold text-violet-800">
-                      <Link2 className="h-3 w-3" />
-                      {order.affiliateHandle
-                        ? `Afiliado @${order.affiliateHandle}`
-                        : order.referredByAdminName || order.referralCode}
+          {orders.map((order) => {
+            const effCommStatus = resolveEffectiveCommissionStatus(order);
+            const commMeta = effCommStatus
+              ? COMMISSION_STATUS_META[effCommStatus]
+              : null;
+
+            return (
+              <li
+                key={order.id}
+                className="flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-sm font-bold text-zinc-950">
+                      #{order.reference}
                     </span>
-                  )}
-                  {typeof order.totalAffiliateCommissionUsd === "number" &&
-                    order.totalAffiliateCommissionUsd > 0 && (
-                      <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-bold text-emerald-800 tabular-nums">
-                        Comisión: {formatPrice(order.totalAffiliateCommissionUsd)}
+                    <span
+                      className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
+                        STATUS_STYLES[order.status] ?? "bg-zinc-100 text-zinc-700"
+                      }`}
+                    >
+                      {STATUS_LABELS[order.status] ?? order.status}
+                    </span>
+                    {order.buyerDisplayName && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2.5 py-0.5 text-[11px] font-semibold text-zinc-800">
+                        <User className="h-3 w-3 text-zinc-500" />
+                        {order.buyerDisplayName}
                       </span>
                     )}
-                  {order.whatsAppRouting === "affiliate" && (
-                    <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[10.5px] font-semibold text-sky-800">
-                      WA al afiliado
-                    </span>
-                  )}
-                  {order.hasUnpricedItems && (
-                    <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10.5px] font-semibold text-amber-800">
-                      Sin precio
-                    </span>
-                  )}
+                    {(order.affiliateHandle || order.referralCode) && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2.5 py-0.5 text-[11px] font-semibold text-violet-800">
+                        <Link2 className="h-3 w-3" />
+                        {order.affiliateHandle
+                          ? `Afiliado @${order.affiliateHandle}`
+                          : order.referredByAdminName || order.referralCode}
+                      </span>
+                    )}
+                    {commMeta ? (
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold tabular-nums ${commMeta.badgeClass}`}
+                      >
+                        <DollarSign className="h-3 w-3" />
+                        {commMeta.label}
+                        {typeof order.totalAffiliateCommissionUsd === "number" &&
+                        order.totalAffiliateCommissionUsd > 0
+                          ? ` (${formatPrice(order.totalAffiliateCommissionUsd)})`
+                          : ""}
+                      </span>
+                    ) : (
+                      typeof order.totalAffiliateCommissionUsd === "number" &&
+                      order.totalAffiliateCommissionUsd > 0 && (
+                        <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-bold text-emerald-800 tabular-nums">
+                          Comisión est.:{" "}
+                          {formatPrice(order.totalAffiliateCommissionUsd)}
+                        </span>
+                      )
+                    )}
+                    {order.whatsAppRouting === "affiliate" && (
+                      <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[10.5px] font-semibold text-sky-800">
+                        WA al afiliado
+                      </span>
+                    )}
+                    {order.hasUnpricedItems && (
+                      <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10.5px] font-semibold text-amber-800">
+                        Sin precio
+                      </span>
+                    )}
+                  </div>
+
+                  <p className="text-xs text-zinc-500">
+                    {formatDate(order.createdAt)} · {order.itemCount}{" "}
+                    {order.itemCount === 1 ? "artículo" : "artículos"}
+                    {order.items.length > 0 &&
+                      ` — ${order.items
+                        .slice(0, 2)
+                        .map((i) => `${i.quantity}× ${i.productName}`)
+                        .join(", ")}${order.items.length > 2 ? "…" : ""}`}
+                  </p>
                 </div>
 
-                <p className="text-xs text-zinc-500">
-                  {formatDate(order.createdAt)} · {order.itemCount}{" "}
-                  {order.itemCount === 1 ? "artículo" : "artículos"}
-                  {order.items.length > 0 &&
-                    ` — ${order.items
-                      .slice(0, 2)
-                      .map((i) => `${i.quantity}× ${i.productName}`)
-                      .join(", ")}${order.items.length > 2 ? "…" : ""}`}
-                </p>
-              </div>
-
-              <div className="flex items-center justify-between gap-3 border-t border-zinc-100 pt-2.5 sm:justify-end sm:border-t-0 sm:pt-0">
-                <p className="font-display text-base font-bold text-zinc-950 tabular-nums">
-                  {order.estimatedTotalUsd !== null
-                    ? formatPrice(order.estimatedTotalUsd)
-                    : "Por confirmar"}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => void openOrderDetail(order)}
-                  className="inline-flex h-9 items-center gap-1.5 rounded-full bg-zinc-950 px-4 text-xs font-semibold text-white transition hover:bg-[#6018F8]"
-                >
-                  {order.status === "requested" ? "Gestionar" : "Ver detalle"}
-                </button>
-              </div>
-            </li>
-          ))}
+                <div className="flex items-center justify-between gap-3 border-t border-zinc-100 pt-2.5 sm:justify-end sm:border-t-0 sm:pt-0">
+                  <p className="font-display text-base font-bold text-zinc-950 tabular-nums">
+                    {order.estimatedTotalUsd !== null
+                      ? formatPrice(order.estimatedTotalUsd)
+                      : "Por confirmar"}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => void openOrderDetail(order)}
+                    className="inline-flex h-9 items-center gap-1.5 rounded-full bg-zinc-950 px-4 text-xs font-semibold text-white transition hover:bg-[#6018F8]"
+                  >
+                    {order.status === "requested" ? "Gestionar" : "Ver detalle"}
+                  </button>
+                </div>
+              </li>
+            );
+          })}
         </ul>
       )}
 
@@ -950,11 +1153,7 @@ export function OrdersAdminTab({
             : undefined
         }
         footer={
-          detail?.status === "requested" &&
-          (sellerProfile?.role === "admin" ||
-            !detail.ownerAdminUserId ||
-            detail.ownerAdminUserId === sellerProfile?.id ||
-            detail.items.some((i) => i.ownerAdminUserId === sellerProfile?.id)) ? (
+          canManageDetailOrder ? (
             <>
               <button
                 type="button"
@@ -998,6 +1197,45 @@ export function OrdersAdminTab({
           </div>
         ) : (
           <div className="space-y-5">
+            {/* Datos del comprador (visible para dueño, afiliado acreditado y superadmin) */}
+            {(detail.buyerDisplayName || detail.buyerWhatsAppPhone) && (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-zinc-200 bg-zinc-50/90 p-3.5">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">
+                    Información del comprador
+                  </p>
+                  <p className="mt-0.5 flex items-center gap-1.5 text-sm font-bold text-zinc-950">
+                    <User className="h-4 w-4 text-[#6018F8]" />
+                    {detail.buyerDisplayName || "Comprador registrado"}
+                  </p>
+                  {detail.buyerWhatsAppPhone && (
+                    <p className="mt-0.5 font-mono text-xs text-zinc-600">
+                      WhatsApp: +{detail.buyerWhatsAppPhone}
+                    </p>
+                  )}
+                </div>
+                {detail.buyerWhatsAppPhone &&
+                  detail.buyerAdminUserId !== sellerProfile?.id && (
+                    <a
+                      href={buildStoreWhatsAppUrl(
+                        detail.items.some(
+                          (i) => i.affiliateUserId === sellerProfile?.id
+                        ) && detail.ownerAdminUserId !== sellerProfile?.id
+                          ? `Hola ${detail.buyerDisplayName || ""}, te escribo como afiliado de Deve Tienda respecto a tu solicitud #${detail.reference} para confirmar si pudiste finalizar tu compra.`
+                          : `Hola ${detail.buyerDisplayName || ""}, te escribo respecto a tu solicitud #${detail.reference} en Deve Tienda.`,
+                        detail.buyerWhatsAppPhone
+                      )}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex h-9 items-center gap-1.5 rounded-full bg-emerald-600 px-4 text-xs font-semibold text-white shadow-2xs transition hover:bg-emerald-700"
+                    >
+                      <MessageCircle className="h-3.5 w-3.5" />
+                      Escribir al comprador
+                    </a>
+                  )}
+              </div>
+            )}
+
             {(detail.affiliateHandle || detail.referralCode) && (
               <div className="flex flex-wrap items-center gap-2">
                 <div className="inline-flex items-center gap-1.5 rounded-full bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-800">
@@ -1040,7 +1278,7 @@ export function OrdersAdminTab({
                 )}
               </div>
 
-              {detail.status === "requested" ? (
+              {canManageDetailOrder ? (
                 <ul className="space-y-2.5">
                   {editableLines.map((line, idx) => (
                     <li
@@ -1173,11 +1411,7 @@ export function OrdersAdminTab({
             )}
 
             {/* Cierre si está abierta */}
-            {detail.status === "requested" &&
-            (sellerProfile?.role === "admin" ||
-              !detail.ownerAdminUserId ||
-              detail.ownerAdminUserId === sellerProfile?.id ||
-              detail.items.some((i) => i.ownerAdminUserId === sellerProfile?.id)) ? (
+            {canManageDetailOrder ? (
               <div className="space-y-3 rounded-2xl border border-zinc-200 bg-zinc-50/80 p-4">
                 <p className="text-xs font-bold uppercase tracking-wider text-zinc-600">
                   Resultado del pedido
@@ -1278,6 +1512,177 @@ export function OrdersAdminTab({
                 )}
               </div>
             )}
+
+            {/* Liquidación de comisión de afiliado (cuando la venta está cerrada) */}
+            {detail.status === "closed" &&
+              (detail.affiliateHandle || detail.commissionStatus) &&
+              (() => {
+                const effStatus = resolveEffectiveCommissionStatus(detail);
+                const meta = effStatus
+                  ? COMMISSION_STATUS_META[effStatus]
+                  : null;
+                const isOrderOwnerOrAdmin =
+                  sellerProfile?.role === "admin" ||
+                  detail.ownerAdminUserId === sellerProfile?.id ||
+                  detail.items.some(
+                    (i) => i.ownerAdminUserId === sellerProfile?.id
+                  );
+                const isOrderAffiliate =
+                  Boolean(sellerProfile?.id) &&
+                  (detail.items.some(
+                    (i) => i.affiliateUserId === sellerProfile?.id
+                  ) ||
+                    (Boolean(detail.affiliateHandle) &&
+                      detail.affiliateHandle === sellerProfile?.handle));
+                const canOwnerMarkPaid =
+                  isOrderOwnerOrAdmin &&
+                  (effStatus === "pending" || effStatus === "disputed");
+                const canAffiliateConfirm =
+                  (isOrderAffiliate || sellerProfile?.role === "admin") &&
+                  (effStatus === "paid" || effStatus === "disputed");
+                const canAffiliateDispute =
+                  isOrderAffiliate &&
+                  (effStatus === "pending" || effStatus === "paid");
+
+                return (
+                  <div className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-zinc-700">
+                        <DollarSign className="h-4 w-4 text-emerald-600" />
+                        Liquidación de comisión (@{detail.affiliateHandle})
+                      </p>
+                      {meta && (
+                        <span
+                          className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${meta.badgeClass}`}
+                        >
+                          {meta.label}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="space-y-1 text-xs text-zinc-600">
+                      <p className="font-bold text-zinc-950 tabular-nums">
+                        Monto a liquidar:{" "}
+                        {typeof detail.totalAffiliateCommissionUsd === "number"
+                          ? formatPrice(detail.totalAffiliateCommissionUsd)
+                          : "Por acordar"}
+                      </p>
+                      {detail.commissionPaidAt && (
+                        <p>
+                          Marcada como pagada el{" "}
+                          <strong>{formatDate(detail.commissionPaidAt)}</strong>
+                        </p>
+                      )}
+                      {detail.commissionPaymentNote && (
+                        <p>
+                          Comprobante / nota del vendedor:{" "}
+                          <span className="font-medium text-zinc-800">
+                            {detail.commissionPaymentNote}
+                          </span>
+                        </p>
+                      )}
+                      {detail.commissionConfirmedAt && (
+                        <p className="inline-flex items-center gap-1 font-semibold text-emerald-700">
+                          <BadgeCheck className="h-3.5 w-3.5" />
+                          Confirmada recibida el{" "}
+                          {formatDate(detail.commissionConfirmedAt)}
+                        </p>
+                      )}
+                      {detail.commissionDisputeNote && (
+                        <p className="rounded-xl border border-rose-200 bg-rose-50 p-2.5 text-rose-800">
+                          <span className="font-bold">Reporte del afiliado: </span>
+                          {detail.commissionDisputeNote}
+                        </p>
+                      )}
+                    </div>
+
+                    {canOwnerMarkPaid && (
+                      <div className="space-y-2 border-t border-zinc-100 pt-3">
+                        <input
+                          type="text"
+                          maxLength={500}
+                          value={paymentNote}
+                          onChange={(e) => setPaymentNote(e.target.value)}
+                          placeholder="Nota opcional del pago (ej. Transfermóvil #8421, efectivo…)"
+                          className="h-9 w-full rounded-xl border border-zinc-200 px-3 text-xs text-zinc-950 focus:border-violet-500 focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          disabled={commissionBusy}
+                          onClick={() => void handleMarkCommissionPaid()}
+                          className="inline-flex h-9 items-center gap-1.5 rounded-full bg-emerald-600 px-4 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50"
+                        >
+                          {commissionBusy ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                          )}
+                          Marcar comisión como pagada
+                        </button>
+                      </div>
+                    )}
+
+                    {(canAffiliateConfirm || canAffiliateDispute) && (
+                      <div className="space-y-2 border-t border-zinc-100 pt-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {canAffiliateConfirm && (
+                            <button
+                              type="button"
+                              disabled={commissionBusy}
+                              onClick={() => void handleConfirmCommission()}
+                              className="inline-flex h-9 items-center gap-1.5 rounded-full bg-[#6018F8] px-4 text-xs font-semibold text-white transition hover:bg-[#5010E8] disabled:opacity-50"
+                            >
+                              {commissionBusy ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <BadgeCheck className="h-3.5 w-3.5" />
+                              )}
+                              Confirmar que recibí el pago
+                            </button>
+                          )}
+                          {canAffiliateDispute && (
+                            <button
+                              type="button"
+                              disabled={commissionBusy}
+                              onClick={() => setDisputeOpen((v) => !v)}
+                              className="inline-flex h-9 items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 px-3.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-100"
+                            >
+                              <AlertTriangle className="h-3.5 w-3.5" />
+                              {disputeOpen
+                                ? "Cancelar reporte"
+                                : "No recibí el pago / Reportar"}
+                            </button>
+                          )}
+                        </div>
+
+                        {disputeOpen && canAffiliateDispute && (
+                          <div className="space-y-2 rounded-xl border border-rose-200 bg-rose-50/70 p-3">
+                            <textarea
+                              rows={2}
+                              maxLength={500}
+                              value={disputeReason}
+                              onChange={(e) => setDisputeReason(e.target.value)}
+                              placeholder="Explica brevemente qué ocurrió (ej. No me llegó la transferencia aún)…"
+                              className="w-full rounded-xl border border-rose-200 bg-white p-2.5 text-xs text-zinc-950 focus:border-rose-400 focus:outline-none"
+                            />
+                            <button
+                              type="button"
+                              disabled={commissionBusy}
+                              onClick={() => void handleDisputeCommission()}
+                              className="inline-flex h-8 items-center gap-1.5 rounded-full bg-rose-600 px-4 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-50"
+                            >
+                              {commissionBusy && (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              )}
+                              Enviar reporte
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
           </div>
         )}
       </AdminModal>

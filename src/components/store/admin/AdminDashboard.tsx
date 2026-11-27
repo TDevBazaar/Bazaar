@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
-  AlertTriangle,
   Bell,
   Boxes,
   ClipboardList,
@@ -22,6 +21,7 @@ import {
   UserCircle2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { CompleteProfileModal } from "@/components/store/CompleteProfileModal";
 import { AffiliationsTab } from "@/components/store/admin/AffiliationsTab";
 import { CategoriesAdminTab } from "@/components/store/admin/CategoriesAdminTab";
 import { ModerationTab } from "@/components/store/admin/ModerationTab";
@@ -36,6 +36,7 @@ import {
 import {
   fetchAdminCategories,
   fetchUnreadNotificationCount,
+  isProfileComplete,
   registerCurrentSeller,
   type AdminSellerProfile,
   type OrderMetrics,
@@ -704,23 +705,17 @@ export function AdminDashboard() {
         </div>
       )}
 
-      {/* Aviso de onboarding si aún no configuró WhatsApp */}
-      {sellerProfile && !sellerProfile.whatsAppPhone && !isSuspended && (
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50/80 p-4 text-xs text-amber-950">
-          <p className="flex items-center gap-2 font-medium">
-            <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
-            Configura tu número de WhatsApp en «Mi perfil» para recibir los
-            pedidos de tus productos directamente en tu teléfono.
-          </p>
-          <button
-            type="button"
-            onClick={() => setActiveTab("enlace")}
-            className="rounded-full bg-amber-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-amber-700"
-          >
-            Configurar WhatsApp
-          </button>
-        </div>
-      )}
+      {/* Popup inicial obligatorio (bloqueante) si falta nombre o WhatsApp */}
+      <CompleteProfileModal
+        key={sellerProfile?.id ?? "onboarding"}
+        open={Boolean(sellerProfile && !isSuspended && !isProfileComplete(sellerProfile))}
+        token={token}
+        profile={sellerProfile}
+        defaultName={session?.displayName}
+        contextLabel="comprar, publicar productos o afiliarte en Deve Tienda"
+        onCompleted={setSellerProfile}
+        onSignOut={handleSignOut}
+      />
 
       {/* Resumen rápido */}
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">

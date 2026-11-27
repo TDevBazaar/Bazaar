@@ -18,9 +18,11 @@ import {
   Store,
 } from "lucide-react";
 import { toast } from "sonner";
+import { CompleteProfileModal } from "@/components/store/CompleteProfileModal";
 import { ProductCard } from "@/components/store/ProductCard";
 import {
   fetchMyAffiliatedProductIds,
+  isProfileComplete,
   registerCurrentSeller,
   subscribeAffiliates,
   type AdminSellerProfile,
@@ -64,6 +66,7 @@ export function SellerProfileClient({
   const [myAffiliatedIds, setMyAffiliatedIds] = useState<string[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [subscribingMode, setSubscribingMode] = useState<string | null>(null);
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -162,6 +165,10 @@ export function SellerProfileClient({
       await triggerGoogleLogin();
       return;
     }
+    if (!isProfileComplete(viewerProfile)) {
+      setProfileModalOpen(true);
+      return;
+    }
 
     setSubscribingMode("all");
     try {
@@ -196,6 +203,10 @@ export function SellerProfileClient({
     if (subscribingMode) return;
     if (!authToken) {
       await triggerGoogleLogin();
+      return;
+    }
+    if (!isProfileComplete(viewerProfile)) {
+      setProfileModalOpen(true);
       return;
     }
     if (ids.length === 0) {
@@ -561,6 +572,18 @@ export function SellerProfileClient({
           </div>
         </div>
       )}
+
+      <CompleteProfileModal
+        key={viewerProfile?.id ?? "seller-aff-onboarding"}
+        open={profileModalOpen && Boolean(authToken && viewerProfile && !isProfileComplete(viewerProfile))}
+        token={authToken}
+        profile={viewerProfile}
+        contextLabel="afiliarte a productos en Deve Tienda"
+        onCompleted={(updated) => {
+          setViewerProfile(updated);
+          setProfileModalOpen(false);
+        }}
+      />
     </div>
   );
 }
